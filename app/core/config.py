@@ -23,14 +23,14 @@ class Settings(BaseSettings):
     EMBEDDING_UPDATE_INTERVAL: int = int(os.getenv("EMBEDDING_UPDATE_INTERVAL", "3600"))
     CLEANUP_INTERVAL: int = int(os.getenv("CLEANUP_INTERVAL", "3600"))
     DATA_DIR: str = os.getenv(
-        "DATA_DIR", "/Users/shiv/Documents/CMP/new/discovery-node/samples"
+        "DATA_DIR", "/Users/mac/workspace/projects/commercemesh/discovery-node/samples"
     )
     TRIGGER_INGESTION_ON_STARTUP: bool = (
         os.getenv("TRIGGER_INGESTION_ON_STARTUP", "false").lower() == "true"
     )
     INGESTION_CONFIG_PATH: str = os.getenv(
         "INGESTION_CONFIG_PATH",
-        "/Users/shiv/Documents/CMP/new/discovery-node/ingestion.yaml",
+        "/Users/mac/workspace/projects/commercemesh/discovery-node/ingestion.yaml",
     )
     # Other settings
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"

@@ -1,5 +1,4 @@
 # tests/test_db_connection.py
-import pytest
 from app.db.base import Base
 from sqlalchemy import text
 

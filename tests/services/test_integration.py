@@ -1,5 +1,4 @@
 # tests/services/test_integration.py
-import pytest
 
 
 def test_process_organization_with_brands(

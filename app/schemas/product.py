@@ -137,6 +137,61 @@ class ProductForVector(BaseModel):
         )
 
 
+class ProductDetailResponse(BaseModel):
+    """Product detail response model"""
+    
+    id: str = Field(..., description="Product ID")
+    name: str = Field(..., description="Product name")
+    description: Optional[str] = Field(None, description="Product description")
+    category: Optional[str] = Field(None, description="Product category name")
+    price: Optional[float] = Field(None, description="Minimum price from offers")
+    offers: List[Dict[str, Any]] = Field(default_factory=list, description="List of offers in JSON-LD format")
+    media: List[Dict[str, Any]] = Field(default_factory=list, description="List of media objects")
+    group: Optional[Dict[str, Any]] = Field(None, description="Product group information")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "7eff4c52-5d03-4770-863d-c795327109fe",
+                "name": "The Boy with the Big Hair (Default Title)",
+                "description": "Harry hates brushing his hair, but when two doves decide to build a nest in his tangled mop, he has bigger problems than just avoiding an annoying comb...",
+                "category": "Children's Books",
+                "price": 14.99,
+                "offers": [
+                    {
+                        "@type": "Offer",
+                        "price": 14.99,
+                        "availability": "https://schema.org/OutOfStock",
+                        "priceCurrency": "USD",
+                        "inventoryLevel": {
+                            "@type": "QuantitativeValue",
+                            "value": 0
+                        },
+                        "priceValidUntil": "2026-07-09T17:15:44.159775"
+                    }
+                ],
+                "media": [
+                    {
+                        "url": "https://cdn.shopify.com/s/files/1/0421/4502/2103/products/76026-44851-cover.jpg?v=1598680680",
+                        "name": "Product Image",
+                        "@type": "ImageObject",
+                        "width": 838,
+                        "height": 768,
+                        "caption": "",
+                        "encodingFormat": "image/jpeg"
+                    }
+                ],
+                "group": {
+                    "id": "0fcb6435-f191-4185-b6a0-5bc63839b493",
+                    "urn": "urn:cmp:product:the-boy-with-the-big-hair",
+                    "name": "The Boy with the Big Hair",
+                    "category": ""
+                }
+            }
+        }
+    )
+
+
 class ProductSearchResponse(BaseModel):
     """Product search result response model in JSON-LD format"""
 

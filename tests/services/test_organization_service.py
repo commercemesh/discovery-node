@@ -1,6 +1,4 @@
 # tests/services/test_organization_service.py
-import pytest
-from uuid import UUID
 import json
 
 

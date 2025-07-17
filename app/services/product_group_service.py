@@ -134,8 +134,10 @@ class ProductGroupService:
         # Extract category information
         category_name = product_group_data.get("category", "")
         if not category_name:
-            logger.error(f"Product group {urn} missing required category name")
-            raise ValueError(f"Product group {urn} missing required category name")
+            logger.error(f"Product group {urn} missing category name, using 'unknown' category")
+            # raise ValueError(f"Product group {urn} missing required category name")
+            category_name = 'unknown'
+
         category_slug = self._slugify(category_name)
         # Always compare lower-case for uniqueness
         category = self.category_service.category_repo.get_by_slug(

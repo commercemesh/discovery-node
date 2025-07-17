@@ -75,6 +75,7 @@ def schedule_all_ingestors():
     """
     Schedule ingestion tasks for all configured ingestors.
     This task reads the configuration and creates individual tasks.
+    This task is called by celery beat to schedule ingestion tasks for all configured ingestors also called on startup if set to true in the config.
     """
     try:
         logger.info("Scheduling ingestion tasks for all configured ingestors")
@@ -167,28 +168,28 @@ def ingest_feed(self, ingestor_name, ingestor_config):
 
         # After successful feed ingestion, trigger vector ingestion
         # Find the registry path for this ingestor
-        registry_path = None
-        try:
-            ingestors = manager.get_ingestors()
-            for ingestor in ingestors:
-                if ingestor["name"] == ingestor_name:
-                    registry_path = ingestor.get("registry_path") or ingestor.get(
-                        "registry"
-                    )
-                    break
-        except Exception as e:
-            logger.warning(
-                f"Could not determine registry_path for vector ingestion: {e}"
-            )
+        # registry_path = None
+        # try:
+        #     ingestors = manager.get_ingestors()
+        #     for ingestor in ingestors:
+        #         if ingestor["name"] == ingestor_name:
+        #             registry_path = ingestor.get("registry_path") or ingestor.get(
+        #                 "registry"
+        #             )
+        #             break
+        # except Exception as e:
+        #     logger.warning(
+        #         f"Could not determine registry_path for vector ingestion: {e}"
+        #     )
 
-        if registry_path:
-            from app.worker.tasks.ingest import ingest_vector
+        # if registry_path:
+        #     from app.worker.tasks.ingest import ingest_vector
 
-            ingest_vector.delay(ingestor_name, ingestor_config)
-        else:
-            logger.warning(
-                f"No registry_path found for vector ingestion for ingestor {ingestor_name}"
-            )
+        #     # ingest_vector.delay(ingestor_name, ingestor_config)
+        # else:
+        #     logger.warning(
+        #         f"No registry_path found for vector ingestion for ingestor {ingestor_name}"
+        #     )
 
         return {
             "status": "success",

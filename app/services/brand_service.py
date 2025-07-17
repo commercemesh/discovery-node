@@ -4,6 +4,10 @@ from uuid import UUID
 from app.db.repositories.brand_repository import BrandRepository
 from app.services.category_service import CategoryService
 from app.schemas.brand import BrandCreate, BrandUpdate, BrandInDB
+from app.services.organization_service import OrganizationService
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BrandService:
@@ -12,6 +16,7 @@ class BrandService:
     def __init__(self, db_session):
         self.brand_repo = BrandRepository(db_session)
         self.category_service = CategoryService(db_session)
+        self.organization_service = OrganizationService(db_session)
 
     def get_brand(self, brand_id: UUID) -> Optional[BrandInDB]:
         """Get brand by ID"""
@@ -37,6 +42,75 @@ class BrandService:
             if brand.name == name:
                 return BrandInDB.model_validate(brand)
         return None
+
+    def get_or_create_by_name(self, brand_name: str, organization_id: UUID = None):
+        """
+        Get or create a brand by name. If brand doesn't exist, creates it.
+        Returns the BrandInDB object.
+        """
+        brand = self.get_by_name(brand_name)
+        if not brand:
+            # Create the brand if it doesn't exist
+            # Note: We need organization_id to create a brand
+            if not organization_id:
+                logger.warning(f"Cannot create brand '{brand_name}' without organization_id")
+                return None
+            
+            brand_create_data = BrandCreate(
+                name=brand_name,
+                organization_id=organization_id,
+                urn=f"urn:cmp:brand:{brand_name.lower().replace(' ', '-')}"
+            )
+            brand = self.create_brand(brand_create_data)
+            logger.info(f"Created new brand '{brand_name}' with ID {brand.id}")
+        
+        return brand
+
+    def get_or_create_by_urn(self, brand_data: Dict[str, Any], org_urn: str = None):
+        """
+        Get or create a brand from feed data using the identifier.value.
+        Returns the BrandInDB object.
+        """
+        # Extract brand identifier from feed data
+        identifier = brand_data.get('identifier', {}).get('value')
+        brand_name = brand_data.get('name')
+        
+        if not identifier:
+            logger.warning(f"Brand data missing identifier.value: {brand_data}")
+            return None
+            
+        # Try to find existing brand by identifier
+        brand = self.brand_repo.get_by_urn(identifier)
+        
+        if not brand:
+            # Create the brand if it doesn't exist
+            if not org_urn:
+                logger.warning(f"Cannot create brand '{brand_name}' without org_urn")
+                return None
+            
+            logger.debug(f"Looking up organization by URN: {org_urn}")
+            organization = self.organization_service.get_organization_by_urn(org_urn)
+            if not organization:
+                # Let's check what organizations exist in the database
+                all_orgs = self.organization_service.list_organizations(0, 1000)
+                logger.warning(f"Cannot create brand '{brand_name}' without organization. URN: {org_urn}")
+                logger.warning(f"Available organizations: {[org.urn for org in all_orgs]}")
+                return None
+          
+            
+            brand_create_data = BrandCreate(
+                name=brand_name,
+                organization_id=organization.id,
+                urn=identifier,
+                logo_url=brand_data.get('logo', ''),
+                raw_data=brand_data
+            )
+            brand = self.create_brand(brand_create_data)
+            logger.info(f"Created new brand '{brand_name}' with ID {brand.id} from feed data")
+        else:
+            logger.debug(f"Found existing brand '{brand_name}' with ID {brand.id}")
+        
+        return brand
 
     def list_brands(self, skip: int = 0, limit: int = 100) -> List[BrandInDB]:
         """List brands with pagination"""

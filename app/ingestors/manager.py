@@ -138,7 +138,7 @@ class IngestorManager:
             }
 
     def ingest_feed(
-        self, ingestor_config: Dict[str, Any], brand_id: Optional[str] = None
+        self, ingestor_config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Ingest a product feed.
@@ -166,7 +166,10 @@ class IngestorManager:
             source = SourceFactory.create(source_type, ingestor_config)
             
             # Fetch feed index data
+            #TODO: Change this function to always return an array of feed index 
             data = source.fetch_feed_index(ingestor_config)
+
+            logger.info(f"Feed index data from fetch_feed_index: {data}")
 
             # Create database session
             db_session = SessionLocal()
@@ -178,6 +181,7 @@ class IngestorManager:
                 feed_data = json.loads(data)
                 
                 # Handle both single ProductFeedIndex and array of ProductFeedIndex objects
+                # we do this because in case of github registry there can be multiple organizations listed with their own feed url
                 feed_indexes = []
                 if isinstance(feed_data, list):
                     # Array of ProductFeedIndex objects (CMP source with multiple organizations)
@@ -199,6 +203,7 @@ class IngestorManager:
 
                 for feed_index in feed_indexes:
                     # Validate it's a ProductFeedIndex
+
                     if feed_index.get("@type") != "ProductFeedIndex":
                         logger.warning(f"Expected ProductFeedIndex, got {feed_index.get('@type')}, skipping")
                         continue
@@ -209,6 +214,17 @@ class IngestorManager:
                     print(
                         f"Processing {len(feed_index.get('shards', []))} shards from feed index {feed_indexes_processed + 1}"
                     )
+
+
+                    org_urn = feed_index.get("orgid")
+                    logger.info(f"Starting feed ingestion for orgid: {org_urn}")
+                    logger.debug(f"Feed index keys: {list(feed_index.keys())}")
+                    logger.debug(f"Full feed index: {feed_index}")
+
+                    if not org_urn:
+                        logger.warning("Org ID is missing for feed index, skipping")
+                        continue
+
 
                     # Process each shard individually
                     for shard in feed_index.get("shards", []):
@@ -222,7 +238,7 @@ class IngestorManager:
                             shard_data = source.fetch_feed(shard_url)
 
                             # Create feed handler for this shard
-                            handler = FeedHandler(db_session, brand_id)
+                            handler = FeedHandler(db_session, org_urn)
 
                             # Process shard data
                             shard_result = handler.process(shard_data)
@@ -259,7 +275,7 @@ class IngestorManager:
                     "result": result,
                 }
             finally:
-                db_session.close()
+                 db_session.close()
         except Exception as e:
             logger.exception(f"Error ingesting feed: {str(e)}")
 

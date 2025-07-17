@@ -312,7 +312,7 @@ class CMPSource(BaseSource):
                 
                 if isinstance(identifier, dict):
                     value = identifier.get("value")
-                    if value and value.startswith("urn:cmp:orgid:"):
+                    if value and (value.startswith("urn:cmp:org:")):
                         logger.info(f"Found organization URN: {value}")
                         print(f"Found organization URN: {value}")
                         return value

@@ -143,8 +143,7 @@ class ProductService:
                 logger.warning(
                     f"Product {urn} references non-existent product group {product_group_urn}"
                 )
-                # In a real implementation, you might want to create the product group on-the-fly
-                # or queue it for later processing
+
 
         if not product_group_id:
             logger.error(f"Product {urn} missing required product group reference")

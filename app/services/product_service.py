@@ -173,20 +173,7 @@ class ProductService:
                     variant_attributes[name] = value
 
         # Category resolution (always required)
-        if not category_name:
-            logger.error(f"Product {urn} missing required category name")
-            raise ValueError(f"Product {urn} missing required category name")
-        category_slug = self._slugify(category_name)
-        # Always compare lower-case for uniqueness
-        category = self.category_service.category_repo.get_by_slug(
-            category_slug.lower()
-        )
-        if not category:
-            from app.schemas.category import CategoryCreate
-
-            category = self.category_service.category_repo.create(
-                CategoryCreate(slug=category_slug.lower(), name=category_name)
-            )
+        category = self.category_service.get_or_create_by_name(category_name)
         category_id = category.id
 
         # Fetch organization_id from brand

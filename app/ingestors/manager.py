@@ -69,13 +69,12 @@ class IngestorManager:
             logger.exception(f"Error loading ingestion configuration: {str(e)}")
             return []
 
-    def ingest_registry(self, source_type: str, registry_path: str) -> Dict[str, Any]:
+    def ingest_registry(self, ingestor_config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Ingest a brand registry.
 
         Args:
-            source_type: Type of source ("local", "remote", "ftp")
-            registry_path: Path or URL to the registry
+            ingestor_config: Full ingestor configuration dictionary
 
         Returns:
             Ingestion result
@@ -83,17 +82,20 @@ class IngestorManager:
         Raises:
             IngestorError: If ingestion fails
         """
+        source_type = ingestor_config.get("source_type")
+        registry_path = ingestor_config.get("registry")
+        
         logger.info(f"Ingesting registry from {source_type} source: {registry_path}")
         print(f"Ingesting registry from {source_type} source: {registry_path}")
 
         start_time = datetime.now()
 
         try:
-            # Create source
-            source = SourceFactory.create(source_type)
+            # Create source with full configuration
+            source = SourceFactory.create(source_type, ingestor_config)
 
             # Fetch data
-            data = source.fetch(registry_path)
+            data = source.fetch_registry(registry_path)
 
             # Create database session
             db_session = SessionLocal()
@@ -136,14 +138,13 @@ class IngestorManager:
             }
 
     def ingest_feed(
-        self, source_type: str, feed_path: str, brand_id: Optional[str] = None
+        self, ingestor_config: Dict[str, Any], brand_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Ingest a product feed.
 
         Args:
-            source_type: Type of source ("local", "remote", "ftp")
-            feed_path: Path or URL to the feed index file
+            ingestor_config: Full ingestor configuration dictionary
             brand_id: Optional brand ID to associate products with
 
         Returns:
@@ -152,17 +153,20 @@ class IngestorManager:
         Raises:
             IngestorError: If ingestion fails
         """
-        logger.info(f"Ingesting feed from {source_type} source: {feed_path}")
-        print(f"Ingesting feed from {source_type} source: {feed_path}")
 
+        logger.info(f"Ingesting feed from {ingestor_config}")
+        print(f"Ingesting feed from {ingestor_config}")
+        
+        source_type = ingestor_config.get("source_type")
+       
         start_time = datetime.now()
 
         try:
-            # Create source
-            source = SourceFactory.create(source_type)
-
+            # Create source with full configuration
+            source = SourceFactory.create(source_type, ingestor_config)
+            
             # Fetch feed index data
-            data = source.fetch(feed_path)
+            data = source.fetch_feed_index(ingestor_config)
 
             # Create database session
             db_session = SessionLocal()
@@ -171,56 +175,74 @@ class IngestorManager:
                 # Parse the feed index data
                 import json
 
-                feed_index = json.loads(data)
+                feed_data = json.loads(data)
+                
+                # Handle both single ProductFeedIndex and array of ProductFeedIndex objects
+                feed_indexes = []
+                if isinstance(feed_data, list):
+                    # Array of ProductFeedIndex objects (CMP source with multiple organizations)
+                    feed_indexes = feed_data
+                    logger.info(f"Processing {len(feed_indexes)} ProductFeedIndex objects")
+                    print(f"Processing {len(feed_indexes)} ProductFeedIndex objects")
+                else:
+                    # Single ProductFeedIndex object (local source)
+                    feed_indexes = [feed_data]
+                    logger.info("Processing single ProductFeedIndex object")
+                    print("Processing single ProductFeedIndex object")
 
-                # Validate it's a ProductFeedIndex
-                if feed_index.get("@type") != "ProductFeedIndex":
-                    raise IngestorError(
-                        f"Expected ProductFeedIndex, got {feed_index.get('@type')}"
-                    )
-
-                logger.info(
-                    f"Processing {len(feed_index.get('shards', []))} shards from feed index"
-                )
-                print(
-                    f"Processing {len(feed_index.get('shards', []))} shards from feed index"
-                )
-
-                # Process each shard individually
+                # Process each feed index
                 total_product_groups = 0
                 total_products = 0
                 total_offers = 0
                 shards_processed = 0
+                feed_indexes_processed = 0
 
-                for shard in feed_index.get("shards", []):
-                    shard_url = shard.get("url")
-                    if not shard_url:
-                        logger.warning("Shard missing URL, skipping")
+                for feed_index in feed_indexes:
+                    # Validate it's a ProductFeedIndex
+                    if feed_index.get("@type") != "ProductFeedIndex":
+                        logger.warning(f"Expected ProductFeedIndex, got {feed_index.get('@type')}, skipping")
                         continue
 
-                    try:
-                        # Fetch shard data
-                        shard_data = source.fetch(shard_url)
+                    logger.info(
+                        f"Processing {len(feed_index.get('shards', []))} shards from feed index {feed_indexes_processed + 1}"
+                    )
+                    print(
+                        f"Processing {len(feed_index.get('shards', []))} shards from feed index {feed_indexes_processed + 1}"
+                    )
 
-                        # Create feed handler for this shard
-                        handler = FeedHandler(db_session, brand_id)
+                    # Process each shard individually
+                    for shard in feed_index.get("shards", []):
+                        shard_url = shard.get("url")
+                        if not shard_url:
+                            logger.warning("Shard missing URL, skipping")
+                            continue
 
-                        # Process shard data
-                        shard_result = handler.process(shard_data)
+                        try:
+                            # Fetch shard data
+                            shard_data = source.fetch_feed(shard_url)
 
-                        # Accumulate results
-                        total_product_groups += shard_result.get(
-                            "product_groups_processed", 0
-                        )
-                        total_products += shard_result.get("products_processed", 0)
-                        total_offers += shard_result.get("offers_processed", 0)
-                        shards_processed += 1
+                            # Create feed handler for this shard
+                            handler = FeedHandler(db_session, brand_id)
 
-                    except Exception as e:
-                        logger.error(f"Error processing shard {shard_url}: {str(e)}")
-                        continue
+                            # Process shard data
+                            shard_result = handler.process(shard_data)
+
+                            # Accumulate results
+                            total_product_groups += shard_result.get(
+                                "product_groups_processed", 0
+                            )
+                            total_products += shard_result.get("products_processed", 0)
+                            total_offers += shard_result.get("offers_processed", 0)
+                            shards_processed += 1
+
+                        except Exception as e:
+                            logger.error(f"Error processing shard {shard_url}: {str(e)}")
+                            continue
+                    
+                    feed_indexes_processed += 1
 
                 result = {
+                    "feed_indexes_processed": feed_indexes_processed,
                     "shards_processed": shards_processed,
                     "product_groups_processed": total_product_groups,
                     "products_processed": total_products,
@@ -233,7 +255,6 @@ class IngestorManager:
                 return {
                     "status": "success",
                     "source_type": source_type,
-                    "path": feed_path,
                     "duration_seconds": duration,
                     "result": result,
                 }
@@ -251,38 +272,73 @@ class IngestorManager:
             return {
                 "status": "error",
                 "source_type": source_type,
-                "path": feed_path,
                 "duration_seconds": duration,
                 "error_type": error_type,
                 "error_message": error_message,
             }
 
-    def ingest_vector(self, source_type: str, registry_path: str) -> Dict[str, Any]:
+    def ingest_vector(self, ingestor_config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Ingest a vector.
         """
+        source_type = ingestor_config.get("source_type")
+        registry_path = ingestor_config.get("registry")
+        
         logger.info(f"Ingesting vector from {source_type} source: {registry_path}")
         print(f"Ingesting vector from {source_type} source: {registry_path}")
 
-        source = SourceFactory.create(source_type)
-        data = source.fetch(registry_path)
-
-        # Parse JSON string into dictionary
-        import json
+        start_time = datetime.now()
 
         try:
-            data_dict = json.loads(data)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from registry: {e}")
-            raise IngestorError(f"Invalid JSON in registry file: {e}")
+            source = SourceFactory.create(source_type, ingestor_config)
+            data = source.fetch_registry(registry_path)
 
-        org_urn = source.get_org_urn(data_dict)
-        logger.info(f"Org ID: {org_urn}")
+            # Parse JSON string into dictionary
+            import json
 
-        db_session = SessionLocal()
-        handler = VectorHandler(db_session, org_urn)
+            try:
+                data_dict = json.loads(data)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON from registry: {e}")
+                raise IngestorError(f"Invalid JSON in registry file: {e}")
 
-        handler.process(org_urn)
+            org_urn = source.get_org_urn(data_dict)
+            logger.info(f"Org ID: {org_urn}")
+
+            db_session = SessionLocal()
+            try:
+                handler = VectorHandler(db_session)
+                result = handler.process(org_urn)
+                
+                # Calculate duration
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                return {
+                    "status": "success",
+                    "source_type": source_type,
+                    "path": registry_path,
+                    "duration_seconds": duration,
+                    "result": result,
+                }
+            finally:
+                db_session.close()
+        except Exception as e:
+            logger.exception(f"Error ingesting vector: {str(e)}")
+
+            # Calculate duration even on error
+            duration = (datetime.now() - start_time).total_seconds()
+
+            error_type = type(e).__name__
+            error_message = str(e)
+
+            return {
+                "status": "error",
+                "source_type": source_type,
+                "path": registry_path,
+                "duration_seconds": duration,
+                "error_type": error_type,
+                "error_message": error_message,
+            }
 
     def has_feed_updates(self, source_type: str, feed_path: str) -> bool:
         """

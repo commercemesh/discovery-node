@@ -75,3 +75,23 @@ class CategoryService:
             category = self.category_repo.get_or_create(slug, name)
             result.append(category.id)
         return result
+
+    def get_or_create_by_name(self, category_name: str):
+        """
+        Get or create a category by name. If name is blank, use 'uncategorized'.
+        Returns the CategoryInDB object.
+        """
+        if not category_name:
+            category_name = "uncategorized"
+        slug = self._slugify(category_name)
+        category = self.category_repo.get_by_slug(slug)
+        if not category:
+            category = self.category_repo.create(CategoryCreate(slug=slug, name=category_name))
+        return CategoryInDB.model_validate(category)
+
+    def _slugify(self, text: str) -> str:
+        """
+        Convert a string to a slug format.
+        For example: "Electronics & Computers" -> "electronics-computers"
+        """
+        return text.lower().replace(" ", "-").replace("&", "").replace("_", "-")

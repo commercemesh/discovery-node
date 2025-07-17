@@ -229,7 +229,7 @@ class ProductRepository:
 
         return query.offset(skip).limit(limit).all()
 
-    def get_products_with_relations(self, offset: int, limit: int, org_id: UUID):
+    def get_products_with_relations_for_org(self, offset: int, limit: int, org_id: UUID):
         """Get products with all vector-needed data in one query"""
         return (
             self.db_session.query(Product)
@@ -249,7 +249,7 @@ class ProductRepository:
         self, offset: int, limit: int, org_id: UUID
     ) -> List[ProductForVector]:
         """Get products formatted specifically for vector processing"""
-        products = self.get_products_with_relations(offset, limit, org_id)
+        products = self.get_products_with_relations_for_org(offset, limit, org_id)
         return [
             ProductForVector.from_product_with_relations(product)
             for product in products

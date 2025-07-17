@@ -86,12 +86,7 @@ def get_beat_schedule():
             schedule[task_name] = {
                 "task": "ingest:all",
                 "schedule": schedule_obj,
-                "args": (
-                    name,
-                    ingestor["source_type"],
-                    ingestor.get("registry"),
-                    ingestor.get("feed_path"),
-                ),
+                "args": (name, ingestor),
                 "options": {"expires": 3600},
             }
 

@@ -22,15 +22,19 @@ class VectorHandler:
     def process(self, org_urn: str) -> Dict[str, Any]:
         logger.info("Processing vector data")
         print("Processing vector data")
+        print(f"Looking for organization with URN: {org_urn}")
 
         organization = self.organization_service.get_organization_by_urn(org_urn)
+        print(f"Found organization: {organization}")
 
         # Extract the UUID from the organization object
         if organization and hasattr(organization, "id"):
             org_id = organization.id
             logger.info(f"Extracted org_id UUID: {org_id}")
+            print(f"Extracted org_id UUID: {org_id}")
         else:
             logger.error(f"Could not extract UUID from organization: {organization}")
+            print(f"Could not extract UUID from organization: {organization}")
             return {
                 "status": "failed",
                 "error": "Could not extract organization UUID",

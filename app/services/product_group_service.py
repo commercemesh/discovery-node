@@ -133,21 +133,7 @@ class ProductGroupService:
 
         # Extract category information
         category_name = product_group_data.get("category", "")
-        if not category_name:
-            logger.error(f"Product group {urn} missing required category name")
-            raise ValueError(f"Product group {urn} missing required category name")
-        category_slug = self._slugify(category_name)
-        # Always compare lower-case for uniqueness
-        category = self.category_service.category_repo.get_by_slug(
-            category_slug.lower()
-        )
-        if not category:
-            # Create category if it doesn't exist
-            from app.schemas.category import CategoryCreate
-
-            category = self.category_service.category_repo.create(
-                CategoryCreate(slug=category_slug.lower(), name=category_name)
-            )
+        category = self.category_service.get_or_create_by_name(category_name)
         category_id = category.id
 
         # Create product group data

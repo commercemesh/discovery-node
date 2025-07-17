@@ -27,7 +27,32 @@ class BaseSource(ABC):
         logger.info(f"Initialized {self.__class__.__name__} with config: {self.config}")
 
     @abstractmethod
-    def fetch(self, path: str) -> str:
+    def fetch_registry(self,  ingestor_config: Dict[str, Any]) -> str:
+        """
+        Fetch data from the source.
+
+        Args:
+            path: Path or URL to the data
+
+        Returns:
+            Raw data as string
+
+        Raises:
+            SourceError: If data cannot be fetched
+        """
+        pass
+
+
+
+    @abstractmethod
+    def fetch_feed_index(self, ingestor_config: Dict[str, Any]) -> str:
+        """
+        Fetch data from the source.
+        """
+        pass
+
+    @abstractmethod
+    def fetch_feed(self, path: str) -> str:
         """
         Fetch data from the source.
 

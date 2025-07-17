@@ -5,11 +5,4 @@ ingestion:
       registry: "https://github.com/commercemesh/commercemesh/blob/main/registry/example/brands.json"
       filter:
         organization: ["urn:cmp:orgid:22eefabc-7b1d-6d29-9e12-22g812190dd3"]
-      schedule: "0 */4 * * *"
-
-  #Mode 2: Platform adapters (single brand)  
-  # - name: "acme-corp"
-  #   source_type: "local"
-  #   registry: "samples/acme-solutions/brand-registory.json"
-  #   feed_path: "samples/acme-solutions/feed/feed.json"
-  #   schedule: "0 */4 * * *"
+      schedule: "0 */4 * * *" 

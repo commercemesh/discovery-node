@@ -1,0 +1,7 @@
+ingestion:
+    # Mode 2: Local feeds (single brand)
+    - name: "acme-corp"
+      source_type: "local"
+      registry: "samples/acme-solutions/brand-registory.json"
+      feed_path: "samples/acme-solutions/feed/feed.json"
+      schedule: "0 */4 * * *" 

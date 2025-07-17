@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     EMBEDDING_UPDATE_INTERVAL: int = int(os.getenv("EMBEDDING_UPDATE_INTERVAL", "3600"))
     CLEANUP_INTERVAL: int = int(os.getenv("CLEANUP_INTERVAL", "3600"))
     DATA_DIR: str = os.getenv(
-        "DATA_DIR", "/Users/shiv/Documents/CMP/new/discovery-node/samples"
+        "DATA_DIR", "/Users/shiv/Documents/CMP/new/discovery-node/"
     )
     TRIGGER_INGESTION_ON_STARTUP: bool = (
         os.getenv("TRIGGER_INGESTION_ON_STARTUP", "false").lower() == "true"

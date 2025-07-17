@@ -175,9 +175,85 @@ discovery-node/
 
 ### Running Tests
 
+The project includes comprehensive test suites for different scenarios:
+
+#### 1. Run All Tests
 ```bash
-pytest
+# Run all worker tests (both mocked and database integration)
+python -m pytest tests/worker/ -v
+
+# Run all tests in the project
+python -m pytest tests/ -v
 ```
+
+#### 2. Run Specific Test Types
+
+**Mocked Tests (fast, don't touch database):**
+```bash
+python -m pytest tests/worker/test_worker_ingestion.py -v
+```
+
+**Database Integration Tests (write to test database):**
+```bash
+python -m pytest tests/worker/test_database_ingestion.py -v
+```
+
+**Real Database Population Test (populates with sample data):**
+```bash
+python -m pytest tests/worker/test_real_database_integration.py -v -s
+```
+
+#### 3. Run Individual Tests
+
+**Test registry ingestion to database:**
+```bash
+python -m pytest tests/worker/test_database_ingestion.py::TestDatabaseIngestion::test_ingest_registry_to_database -v -s
+```
+
+**Test complete ingestion workflow:**
+```bash
+python -m pytest tests/worker/test_database_ingestion.py::TestDatabaseIngestion::test_ingest_all_task_with_database -v -s
+```
+
+**Populate test database with Acme data:**
+```bash
+python -m pytest tests/worker/test_real_database_integration.py::TestRealDatabaseIntegration::test_populate_test_database_with_acme_data -v -s
+```
+
+#### 4. Check Database After Tests
+
+After running the database tests, you can inspect the `cmp_discovery_test` database:
+
+```sql
+-- Connect to your PostgreSQL and check the test database
+\c cmp_discovery_test
+
+-- See what data was inserted
+SELECT * FROM organizations;
+SELECT * FROM brands;
+SELECT * FROM product_groups;
+SELECT * FROM categories;
+```
+
+#### 5. Test Environment Setup
+
+The tests use a separate test database defined in `tests/test.env`:
+
+```bash
+# Check that test.env is being used
+cat tests/test.env
+
+# Verify test database connection
+psql postgresql://postgres:admin@localhost:5432/cmp_discovery_test -c "SELECT 1;"
+```
+
+#### Test Options
+
+- Use `-v` for verbose output (shows test names)
+- Use `-s` to see print statements and debug output
+- Use `--tb=short` for shorter error traces if tests fail
+
+The database integration tests will actually populate your `cmp_discovery_test` database with real data from the ingestion.yaml scenarios, so you'll be able to see the results of the ingestion process in the database.
 
 ### Database Migrations
 

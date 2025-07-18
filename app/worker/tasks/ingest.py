@@ -149,7 +149,12 @@ def ingest_registry(self, ingestor_name, ingestor_config):
 
 
 @shared_task(
-    name="ingest:feed", bind=True, max_retries=3, default_retry_delay=300  # 5 minutes
+    name="ingest:feed", 
+    bind=True, 
+    max_retries=3, 
+    default_retry_delay=300,  # 5 minutes
+    time_limit=7200,  # 2 hours hard limit
+    soft_time_limit=6600  # 1.75 hours soft limit
 )
 def ingest_feed(self, ingestor_name, ingestor_config):
     """

@@ -2,6 +2,8 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func
 from app.db.models.product_group import ProductGroup
 from app.db.models.category import Category
 from app.schemas.product_group import ProductGroupCreate, ProductGroupUpdate
@@ -124,3 +126,80 @@ class ProductGroupRepository:
             .limit(limit)
             .all()
         )
+
+    def bulk_upsert(self, product_groups: List[ProductGroupCreate], batch_size: int = 1000) -> List[ProductGroup]:
+        """
+        Bulk upsert (insert or update) product groups using SQLAlchemy's bulk_save_objects.
+        Processes in batches to handle large datasets efficiently.
+        Returns list of upserted ProductGroup objects.
+        """
+        from sqlalchemy.dialects.postgresql import insert
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        upserted_groups = []
+        
+        for i in range(0, len(product_groups), batch_size):
+            batch = product_groups[i:i + batch_size]
+            
+            try:
+                # Prepare data with deduplication - exclude "category" since it's not a direct field in the model
+                mappings = []
+                seen_urns = set()
+                
+                for pg in batch:
+                    # Check for duplicate URNs within this batch
+                    urn = pg.urn
+                    if urn in seen_urns:
+                        logger.warning(f"Duplicate URN '{urn}' found in batch, skipping duplicate")
+                        continue
+                    seen_urns.add(urn)
+                    
+                    mappings.append(pg.model_dump(exclude={"category"}))
+                
+                # Skip if no valid mappings (all were duplicates)
+                if not mappings:
+                    logger.warning(f"All product groups in batch {i} were duplicates, skipping batch")
+                    continue
+                
+                # Create insert statement with ON CONFLICT
+                stmt = insert(ProductGroup).values(mappings)
+                
+                # Define which columns to update on conflict
+                # Note: 'category' is excluded from mappings, so we shouldn't try to update it
+                update_dict = {
+                    'name': stmt.excluded.name,
+                    'description': stmt.excluded.description,
+                    'url': stmt.excluded.url,
+                    'product_group_id': stmt.excluded.product_group_id,
+                    'varies_by': stmt.excluded.varies_by,
+                    'brand_id': stmt.excluded.brand_id,
+                    'category_id': stmt.excluded.category_id,
+                    'organization_id': stmt.excluded.organization_id,
+                    'raw_data': stmt.excluded.raw_data,
+                    'updated_at': func.now(),
+                }
+                
+                # Execute upsert
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['urn'],
+                    set_=update_dict
+                )
+                
+                self.db_session.execute(stmt)
+                self.db_session.flush()
+                
+                # Fetch upserted records
+                urns = [m['urn'] for m in mappings]
+                upserted = self.db_session.query(ProductGroup).filter(
+                    ProductGroup.urn.in_(urns)
+                ).all()
+                upserted_groups.extend(upserted)
+                
+            except Exception as e:
+                logger.error(f"Error in bulk_upsert batch {i}: {str(e)}")
+                self.db_session.rollback()
+                raise
+        
+        self.db_session.commit()
+        return upserted_groups

@@ -69,9 +69,15 @@ def validate_cmp_data(data: Dict[str, Any], data_type: str) -> bool:
     if not isinstance(data, dict):
         raise ValidationError(f"Expected dictionary, got {type(data)}")
 
-    # Check context
+    # Check context - be more lenient for feeds
     if "@context" not in data:
-        raise ValidationError("Missing @context in data")
+        if data_type == "registry":
+            raise ValidationError("Missing @context in registry data")
+        else:
+            # For feeds, log a warning but continue processing
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Missing @context in {data_type} data, continuing anyway")
 
     # Validate based on data type
     if data_type == "registry":

@@ -2,7 +2,8 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
+from sqlalchemy.dialects.postgresql import insert
 from app.db.models.product import Product
 from app.db.models.category import Category
 from app.schemas.product import ProductCreate, ProductUpdate, ProductForVector
@@ -268,3 +269,103 @@ class ProductRepository:
             .filter(Product.id.in_(product_ids))
             .all()
         )
+
+    def bulk_upsert(self, products: List[ProductCreate], batch_size: int = 1000) -> List[Product]:
+        """
+        Bulk upsert (insert or update) products using SQLAlchemy's bulk operations.
+        Processes in batches to handle large datasets efficiently.
+        Returns list of upserted Product objects.
+        """
+        from sqlalchemy.dialects.postgresql import insert
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        upserted_products = []
+        
+        for i in range(0, len(products), batch_size):
+            batch = products[i:i + batch_size]
+            
+            try:
+                # Prepare data with deduplication
+                mappings = []
+                seen_urns = set()
+                
+                for product_data in batch:
+                    # Check for duplicate URNs within this batch
+                    urn = product_data.urn
+                    if urn in seen_urns:
+                        logger.warning(f"Duplicate URN '{urn}' found in batch, skipping duplicate")
+                        continue
+                    seen_urns.add(urn)
+                    
+                    # Handle offers data
+                    offers_data = None
+                    if product_data.offers:
+                        offers_data = product_data.offers.model_dump()
+                    
+                    # Handle additional properties
+                    variant_attributes = product_data.variant_attributes or {}
+                    if product_data.additional_properties:
+                        for prop in product_data.additional_properties:
+                            variant_attributes[prop.name] = prop.value
+                    
+                    # Create dict for bulk operation
+                    product_dict = product_data.model_dump(
+                        exclude={"offers", "additional_properties", "category"}
+                    )
+                    
+                    # Note: Offers data (price, availability, etc.) is handled separately
+                    # through the Offer model and should not be added to the Product record
+                    
+                    # Update variant attributes
+                    product_dict["variant_attributes"] = variant_attributes
+                    
+                    mappings.append(product_dict)
+                
+                # Skip if no valid mappings (all were duplicates)
+                if not mappings:
+                    logger.warning(f"All products in batch {i} were duplicates, skipping batch")
+                    continue
+                
+                # Create insert statement with ON CONFLICT
+                stmt = insert(Product).values(mappings)
+                
+                # Define which columns to update on conflict
+                # Note: price-related fields are handled separately through the Offer model
+                update_dict = {
+                    'name': stmt.excluded.name,
+                    'url': stmt.excluded.url,
+                    'sku': stmt.excluded.sku,
+                    'description': stmt.excluded.description,
+                    'product_group_id': stmt.excluded.product_group_id,
+                    'brand_id': stmt.excluded.brand_id,
+                    'category_id': stmt.excluded.category_id,
+                    'organization_id': stmt.excluded.organization_id,
+                    'variant_attributes': stmt.excluded.variant_attributes,
+                    'raw_data': stmt.excluded.raw_data,
+                    'updated_at': func.now(),
+                }
+                
+                # Execute upsert
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['urn'],
+                    set_=update_dict
+                )
+                
+                self.db_session.execute(stmt)
+                self.db_session.flush()
+                
+                # Fetch upserted records
+                urns = [m['urn'] for m in mappings]
+                upserted = self.db_session.query(Product).filter(
+                    Product.urn.in_(urns)
+                ).all()
+                upserted_products.extend(upserted)
+                
+            except Exception as e:
+                logger.error(f"Error in bulk_upsert batch {i}: {str(e)}")
+                self.db_session.rollback()
+                raise
+        
+        self.db_session.commit()
+        return upserted_products

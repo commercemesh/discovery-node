@@ -173,3 +173,48 @@ class ProductGroupService:
         """
         # Very basic implementation - for production, use a proper slugify library
         return text.lower().replace(" ", "-").replace("&", "").replace("_", "-")
+
+    def bulk_process_product_groups(
+        self, product_groups_data: List[Dict[str, Any]], brand_id: UUID, organization_id: UUID, batch_size: int = 1000
+    ) -> List[ProductGroupInDB]:
+        """
+        Bulk process product groups from CMP product feed.
+        Returns list of created/updated product groups.
+        """
+        product_group_creates = []
+        
+        for pg_data in product_groups_data:
+            # Extract URN
+            urn = pg_data.get("@id", "")
+            if not urn:
+                logger.warning("Skipping product group without @id")
+                continue
+            
+            # Extract varies_by
+            varies_by = pg_data.get("variesBy", [])
+            if isinstance(varies_by, str):
+                varies_by = [varies_by]
+            
+            # Extract category
+            category_name = pg_data.get("category", "")
+            category = self.category_service.get_or_create_by_name(category_name)
+            
+            # Create product group object
+            product_group_create = ProductGroupCreate(
+                name=pg_data.get("name", ""),
+                description=pg_data.get("description", ""),
+                url=pg_data.get("url", ""),
+                category=category_name,
+                product_group_id=pg_data.get("productGroupID", ""),
+                varies_by=varies_by,
+                brand_id=brand_id,
+                urn=urn,
+                raw_data=pg_data,
+                category_id=category.id,
+                organization_id=organization_id,
+            )
+            product_group_creates.append(product_group_create)
+        
+        # Bulk upsert
+        upserted = self.product_group_repo.bulk_upsert(product_group_creates, batch_size)
+        return [ProductGroupInDB.model_validate(pg) for pg in upserted]

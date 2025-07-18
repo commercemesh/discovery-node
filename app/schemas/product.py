@@ -160,6 +160,82 @@ class ProductSearchResponse(BaseModel):
         None, description="Publication date in ISO format"
     )
 
+
+class ProductByUrnResponse(BaseModel):
+    """Product by URN response model in JSON-LD ItemList format"""
+
+    context: str = Field(
+        default="https://schema.org",
+        alias="@context",
+        description="JSON-LD context",
+    )
+    type: str = Field(default="ItemList", alias="@type", description="Schema.org type")
+    itemListElement: List[Dict[str, Any]] = Field(..., description="List containing ProductGroup and Product")
+
+    class Config:
+        populate_by_name = True
+        json_schema_extra = {
+            "example": {
+                "@context": "https://schema.org",
+                "@type": "ItemList",
+                "itemListElement": [
+                    {
+                        "@type": "ListItem",
+                        "position": 1,
+                        "item": {
+                            "@context": "https://schema.org",
+                            "@type": "ProductGroup",
+                            "@id": "urn:cmp:product:the-journey-within",
+                            "name": "The Journey Within",
+                            "description": "",
+                            "url": "https://insight-editions.myshopify.com/products/the-journey-within",
+                            "brand": {
+                                "@type": "Brand",
+                                "name": "FutureFabrik"
+                            },
+                            "category": "Books",
+                            "productGroupID": "the-journey-within",
+                            "variesBy": ["title"]
+                        }
+                    },
+                    {
+                        "@type": "ListItem",
+                        "position": 2,
+                        "item": {
+                            "@context": "https://schema.org",
+                            "@type": "Product",
+                            "@id": "urn:cmp:sku:",
+                            "name": "The Journey Within (Default Title)",
+                            "url": "https://insight-editions.myshopify.com/products/the-journey-within?variant=",
+                            "sku": "",
+                            "isVariantOf": {
+                                "@type": "ProductGroup",
+                                "@id": "urn:cmp:product:the-journey-within"
+                            },
+                            "offers": {
+                                "@type": "Offer",
+                                "price": 0.0,
+                                "priceCurrency": "USD",
+                                "availability": "https://schema.org/OutOfStock",
+                                "inventoryLevel": {
+                                    "@type": "QuantitativeValue",
+                                    "value": 0
+                                },
+                                "priceValidUntil": "2026-06-19T15:07:18.333109"
+                            },
+                            "additionalProperty": [
+                                {
+                                    "@type": "PropertyValue",
+                                    "name": "title",
+                                    "value": "Default Title"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+
     class Config:
         populate_by_name = True
         json_schema_extra = {

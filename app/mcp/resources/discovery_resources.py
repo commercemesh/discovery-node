@@ -462,11 +462,11 @@ async def _get_node_info() -> str:
                 {
                     "@type": "ViewAction", 
                     "name": "get-product-details",
-                    "description": "Get detailed information about a specific product",
+                    "description": "Get detailed information about a specific product or product group by URN",
                     "target": {
                         "@type": "EntryPoint",
                         "actionPlatform": "MCP",
-                        "description": "MCP tool for product details"
+                        "description": "MCP tool for product/product group details via URN lookup"
                     }
                 }
             ],

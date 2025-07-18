@@ -38,6 +38,17 @@ def register_discovery_prompts(app: Server) -> None:
                         required=True
                     )
                 ]
+            ),
+            types.Prompt(
+                name="product-lookup",
+                description="Get detailed information about a specific product or product group using URN",
+                arguments=[
+                    types.PromptArgument(
+                        name="urn",
+                        description="Product or ProductGroup URN to look up",
+                        required=True
+                    )
+                ]
             )
         ]
     
@@ -49,6 +60,8 @@ def register_discovery_prompts(app: Server) -> None:
                 return _get_product_search_prompt(arguments)
             elif name == "search-analysis":
                 return _get_search_analysis_prompt(arguments)
+            elif name == "product-lookup":
+                return _get_product_lookup_prompt(arguments)
             else:
                 raise ValueError(f"Unknown prompt: {name}")
         except Exception as e:
@@ -93,6 +106,7 @@ def _get_product_search_prompt(arguments: dict) -> types.GetPromptResult:
 ## Key Data Points to Extract:
 
 - **Product Information**: Names, descriptions, SKUs
+- **Product URNs**: Use the `@id` field to get detailed info with get-product-details tool
 - **Product Links**: Use `url` field to create clickable links to product pages
 - **Images**: Display the first image from `image` array for visual appeal
 - **Pricing**: Current prices and currencies from offers
@@ -116,6 +130,13 @@ def _get_product_search_prompt(arguments: dict) -> types.GetPromptResult:
 - Use broader terms for discovery, specific terms for targeted results
 - Product names, brands, and categories are all searchable
 - Search scores help identify the most relevant matches
+- Use the `@id` field (URN) with get-product-details tool for deep dive into specific products
+
+## Advanced Usage:
+
+- **Get detailed info**: Copy the `@id` URN from search results and use get-product-details tool
+- **Explore product groups**: URNs starting with `urn:cmp:product:` are product groups with multiple variants
+- **Individual products**: URNs starting with `urn:cmp:sku:` are specific product variants
 
 Present your findings in a visually appealing way with images and clickable product links where available."""
 
@@ -189,11 +210,84 @@ Provide a structured analysis including:
 - Show the first image from the `image` array if available
 - Make product names clickable using the `url` field
 - Display prices and availability clearly
+- Note the URN (`@id` field) for detailed lookup capability
+
+**Advanced Analysis**: For interesting products, use the get-product-details tool with their URN to get deeper insights about:
+- Individual products (URNs starting with `urn:cmp:sku:`)
+- Product groups and their variants (URNs starting with `urn:cmp:product:`)
 
 Include specific examples from the search results to support your analysis."""
 
     return types.GetPromptResult(
         description=f"Analyze search results for '{search_term}' with visual presentation",
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(
+                    type="text",
+                    text=prompt_content
+                )
+            )
+        ]
+    )
+
+
+def _get_product_lookup_prompt(arguments: dict) -> types.GetPromptResult:
+    """Generate product lookup prompt"""
+    urn = arguments.get("urn", "")
+    
+    prompt_content = f"""You are looking up detailed information for the product or product group with URN: "{urn}". Use the get-product-details tool effectively to retrieve and present the information.
+
+## Lookup Process:
+
+1. **Use the Tool**: Call get-product-details with the URN: "{urn}"
+   - The tool will search both products and product groups tables
+   - URN format can be either:
+     - Product: `urn:cmp:sku:{{product-id}}`
+     - ProductGroup: `urn:cmp:product:{{group-id}}`
+
+2. **Present Results Based on Type**:
+
+   **If it's a Product**:
+   - Display product name, SKU, description
+   - Show brand and category information
+   - Display offers with pricing and availability
+   - Include product URL for direct access
+   - Show any variant attributes or additional properties
+
+   **If it's a ProductGroup**:
+   - Display product group name and description
+   - Show what the group varies by (e.g., size, color, edition)
+   - List all linked products in the group
+   - Display brand and category information
+   - Include product group URL
+
+3. **Visual Enhancement**:
+   - Make the product/group name prominent
+   - Format pricing information clearly
+   - Create clickable links using URLs when available
+   - Present linked products in an organized list
+
+## Key Information to Extract:
+
+- **Identity**: URN, name, SKU (for products)
+- **Details**: Description, brand, category
+- **Pricing**: Current offers with price, currency, availability
+- **Relationships**: Linked products (for groups), product group (for products)
+- **Attributes**: Variant attributes, additional properties
+- **Access**: Direct URLs to product pages
+
+## Error Handling:
+
+If the URN is not found:
+- Confirm the URN format is correct
+- Suggest checking if it might be the other type (product vs. product group)
+- Provide guidance on finding the correct URN
+
+Present the information in a clear, organized format that helps users understand what they're looking at and how to access more details."""
+
+    return types.GetPromptResult(
+        description=f"Look up detailed information for URN '{urn}'",
         messages=[
             types.PromptMessage(
                 role="user",

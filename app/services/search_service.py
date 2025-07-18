@@ -19,6 +19,7 @@ class SearchResult:
     sparse_score: Optional[float] = None
     # Additional product information
     product_name: Optional[str] = None
+    product_urn: Optional[str] = None
     product_brand: Optional[str] = None
     product_category: Optional[str] = None
     product_price: Optional[float] = None
@@ -303,6 +304,7 @@ class SearchService:
 
                 product_map[str(product.id)] = {
                     "name": product.name,
+                    "urn": product.urn,  # Add the URN from the product
                     "brand": brand_name,
                     "category": product.category.name if product.category else None,
                     "prices": prices,
@@ -328,6 +330,7 @@ class SearchService:
                     if hasattr(result, "product_name"):
                         # SearchResult object
                         result.product_name = data["name"]
+                        result.product_urn = data["urn"]
                         result.product_brand = data["brand"]
                         result.product_category = data["category"]
                         result.product_price = (
@@ -343,6 +346,7 @@ class SearchService:
                     else:
                         # Dictionary
                         result["product_name"] = data["name"]
+                        result["product_urn"] = data["urn"]
                         result["product_brand"] = data["brand"]
                         result["product_category"] = data["category"]
                         result["product_price"] = (

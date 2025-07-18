@@ -1,11 +1,11 @@
-from fastapi import APIRouter, HTTPException, Query, status, Depends
-from app.services.search_service import SearchService
-from app.schemas.product import ProductSearchResponse
+from fastapi import APIRouter, HTTPException, status, Depends, Path
+from app.services.product_service import ProductService
+from app.schemas.product import ProductByUrnResponse
 from app.db.base import get_db_session
 from sqlalchemy.orm import Session
-from typing import List
-from app.utils.formatters import format_product_search_response
+from app.utils.formatters import format_product_by_urn_response
 import logging
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
@@ -20,75 +20,112 @@ products_router = APIRouter(
 
 
 @products_router.get(
-    "/products",
-    response_model=ProductSearchResponse,
+    "/products/{urn}",
+    response_model=ProductByUrnResponse,
     status_code=status.HTTP_200_OK,
-    summary="Search for products",
-    description="Search for products using a natural language query. Returns a list of relevant products ranked by similarity score.",
-    response_description="List of products matching the search query",
+    summary="Get product or product group by URN",
+    description="Search for a URN in both products and product groups tables. Returns different structures based on what's found: ProductGroup URN returns ProductGroup + all linked products; Product URN with ProductGroup returns both; Product URN without ProductGroup returns only the product.",
+    response_description="Product and ProductGroup data in ItemList format",
     responses={
         200: {
-            "description": "Successful product search",
-            "model": ProductSearchResponse,
+            "description": "Product found successfully",
+            "model": ProductByUrnResponse,
         },
         400: {
-            "description": "Invalid search query",
+            "description": "Invalid URN format",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Search query cannot be empty"}
+                    "example": {"detail": "Invalid URN format"}
+                }
+            },
+        },
+        404: {
+            "description": "Product not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Product not found"}
                 }
             },
         },
         500: {
             "description": "Internal server error",
             "content": {
-                "application/json": {"example": {"detail": "Search service error"}}
+                "application/json": {"example": {"detail": "Product service error"}}
             },
         },
     },
 )
-async def get_products(
-    q: str = Query(
-        default="James Cameron",
-        description="Search query for finding products",
+async def get_product_by_urn(
+    urn: str = Path(
+        ...,
+        description="Product URN (Uniform Resource Name)",
+        example="urn:cmp:sku:12345-abcde",
         min_length=1,
         max_length=500,
-        example="wireless headphones",
     ),
     db: Session = Depends(get_db_session),
-) -> ProductSearchResponse:
+) -> ProductByUrnResponse:
     """
-    Search for products using natural language queries.
+    Search for a URN in both products and product groups tables.
 
-    The search uses hybrid search combining dense and sparse vectors for optimal results.
+    **Behavior depends on what's found:**
+    
+    1. **ProductGroup URN**: Returns ProductGroup + all linked Products
+       - ProductGroup as first ListItem (position 1)
+       - All linked Products as subsequent ListItems (positions 2, 3, etc.)
+    
+    2. **Product URN with ProductGroup**: Returns ProductGroup + Product
+       - ProductGroup as first ListItem (position 1)
+       - Product as second ListItem (position 2)
+    
+    3. **Product URN without ProductGroup**: Returns only Product
+       - Product as first ListItem (position 1)
 
-    - **q**: The search query (e.g., "gaming laptop", "wireless earbuds", "running shoes")
+    The URN should be URL-encoded if it contains special characters.
 
-    Returns a list of products sorted by relevance score.
+    - **urn**: The URN to search for (e.g., "urn:cmp:sku:12345-abcde" or "urn:cmp:product:product-group-name")
+
+    Returns the data in schema.org ItemList format with proper JSON-LD context.
     """
     try:
-        if not q or not q.strip():
+        # URL decode the URN in case it was encoded
+        decoded_urn = urllib.parse.unquote(urn)
+        
+        # Basic URN validation
+        if not decoded_urn or not decoded_urn.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Search query cannot be empty",
+                detail="URN cannot be empty",
             )
 
-        search_service = SearchService(db)
-        results = search_service.search_products(q)
+        # Validate URN format (basic check)
+        if not decoded_urn.startswith("urn:"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid URN format - must start with 'urn:'",
+            )
 
-        response_data = format_product_search_response(results)
+        product_service = ProductService(db)
+        product_details = product_service.get_product_with_details_by_urn(decoded_urn)
 
-        # Create the ProductSearchResponse object
-        response = ProductSearchResponse(**response_data)
+        if not product_details:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found",
+            )
 
+        response_data = format_product_by_urn_response(product_details)
+
+        # Create the ProductByUrnResponse object
+        response = ProductByUrnResponse(**response_data)
 
         return response
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error during product search: {str(e)}")
+        logger.error(f"Error retrieving product by URN {urn}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Search service error",
+            detail="Product service error",
         )

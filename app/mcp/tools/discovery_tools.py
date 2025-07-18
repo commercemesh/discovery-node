@@ -44,14 +44,14 @@ def register_discovery_tools(
             ),
             types.Tool(
                 name="get-product-details",
-                description="Get detailed information about a specific product",
+                description="Get detailed information about a specific product or product group by URN",
                 inputSchema={
                     "type": "object",
-                    "required": ["product_id"],
+                    "required": ["urn"],
                     "properties": {
-                        "product_id": {
+                        "urn": {
                             "type": "string",
-                            "description": "Product ID to retrieve details for"
+                            "description": "Product or ProductGroup URN to retrieve details for"
                         }
                     }
                 }
@@ -158,37 +158,73 @@ def _handle_get_product_details(
     arguments: dict,
     ctx
 ) -> List[types.TextContent]:
-    """Handle product details requests"""
-    product_id = arguments["product_id"]
+    """Handle product details requests by URN"""
+    urn = arguments["urn"]
     
-    logger.info(f"Fetching details for product: {product_id}")
+    logger.info(f"Fetching details for URN: {urn}")
     
-    product = product_service.get_product_by_id(product_id)
+    # Use the same service method as the products API
+    product_details = product_service.get_product_with_details_by_urn(urn)
     
-    if not product:
+    if not product_details:
         return [
             types.TextContent(
                 type="text",
-                text=f"Product not found: {product_id}"
+                text=f"Product or ProductGroup not found: {urn}"
             )
         ]
     
-    # Format detailed product information
-    details = f"**Product Details**\n\n"
-    details += f"**Name:** {product.name}\n"
-    details += f"**SKU:** {product.sku or 'N/A'}\n"
-    details += f"**Brand:** {product.brand.name if product.brand else 'Unknown'}\n"
-    details += f"**Category:** {product.category.name if product.category else 'Unknown'}\n"
-    details += f"**Description:** {product.description or 'No description available'}\n"
-    details += f"**Price:** ${product.price or 'N/A'}\n"
+    result_type = product_details.get("type")
+    brand = product_details.get("brand")
+    category = product_details.get("category")
+    offers = product_details.get("offers", [])
     
-    # Add more details if available
-    if product.url:
-        details += f"**URL:** {product.url}\n"
-    if product.media:
-        details += f"**Media:** {len(product.media)} items\n"
-    if product.offers:
-        details += f"**Offers:** {len(product.offers)} available\n"
+    if result_type == "product":
+        # Format product details
+        product = product_details["product"]
+        details = f"**Product Details**\n\n"
+        details += f"**URN:** {product.urn}\n"
+        details += f"**Name:** {product.name}\n"
+        details += f"**SKU:** {product.sku or 'N/A'}\n"
+        details += f"**Brand:** {brand.name if brand else 'Unknown'}\n"
+        details += f"**Category:** {category.name if category else 'Unknown'}\n"
+        details += f"**Description:** {product.description or 'No description available'}\n"
+        
+        # Add offer information
+        if offers:
+            details += f"**Offers:** {len(offers)} available\n"
+            for i, offer in enumerate(offers[:3], 1):  # Show first 3 offers
+                details += f"  {i}. ${offer.price} {offer.price_currency} - {offer.availability}\n"
+        
+        # Add more details if available
+        if product.url:
+            details += f"**URL:** {product.url}\n"
+            
+    elif result_type == "product_group":
+        # Format product group details
+        product_group = product_details["product_group"]
+        linked_products = product_details.get("linked_products", [])
+        
+        details = f"**ProductGroup Details**\n\n"
+        details += f"**URN:** {product_group.urn}\n"
+        details += f"**Name:** {product_group.name}\n"
+        details += f"**Brand:** {brand.name if brand else 'Unknown'}\n"
+        details += f"**Category:** {category.name if category else 'Unknown'}\n"
+        details += f"**Description:** {product_group.description or 'No description available'}\n"
+        details += f"**Product Group ID:** {product_group.product_group_id or 'N/A'}\n"
+        details += f"**Varies By:** {', '.join(product_group.varies_by) if product_group.varies_by else 'N/A'}\n"
+        
+        # Add linked products
+        if linked_products:
+            details += f"\n**Linked Products ({len(linked_products)}):**\n"
+            for i, product in enumerate(linked_products[:5], 1):  # Show first 5 products
+                details += f"  {i}. {product.name} (URN: {product.urn})\n"
+            if len(linked_products) > 5:
+                details += f"  ... and {len(linked_products) - 5} more\n"
+        
+        # Add URL if available
+        if product_group.url:
+            details += f"**URL:** {product_group.url}\n"
     
     return [
         types.TextContent(

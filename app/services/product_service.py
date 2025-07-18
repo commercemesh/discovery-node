@@ -39,6 +39,77 @@ class ProductService:
             return None
         return ProductInDB.model_validate(product)
 
+    def get_product_with_details_by_urn(self, urn: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for URN in both products and product groups tables.
+        If found as product: return ONLY the product
+        If found as product group: return product group and all linked products
+        """
+        # First try to find as a product
+        product = self.product_repo.get_by_urn(urn)
+        if product:
+            # Found as product - return ONLY the product (no product group)
+            # Get brand
+            from app.services.brand_service import BrandService
+            brand_service = BrandService(self.db_session)
+            brand = brand_service.get_brand(product.brand_id)
+            
+            # Get category
+            category = None
+            if product.category_id:
+                category = self.category_service.get_category(product.category_id)
+            
+            # Get offers
+            from app.services.offer_service import OfferService
+            offer_service = OfferService(self.db_session)
+            offers = offer_service.list_by_product(product.id)
+            
+            return {
+                "type": "product",
+                "product": ProductInDB.model_validate(product),
+                "brand": brand,
+                "category": category,
+                "offers": offers
+            }
+        
+        # Then try to find as a product group
+        product_group = self.product_group_service.get_by_urn(urn)
+        if product_group:
+            # Found as product group - get all linked products
+            from app.db.repositories.product_repository import ProductRepository
+            product_repo = ProductRepository(self.db_session)
+            linked_products = product_repo.list_by_product_group(product_group.id)
+            
+            # Get brand
+            from app.services.brand_service import BrandService
+            brand_service = BrandService(self.db_session)
+            brand = brand_service.get_brand(product_group.brand_id)
+            
+            # Get category
+            category = None
+            if product_group.category_id:
+                category = self.category_service.get_category(product_group.category_id)
+            
+            # Get offers for all linked products
+            from app.services.offer_service import OfferService
+            offer_service = OfferService(self.db_session)
+            all_offers = []
+            for product in linked_products:
+                offers = offer_service.list_by_product(product.id)
+                all_offers.extend(offers)
+            
+            return {
+                "type": "product_group", 
+                "product_group": product_group,
+                "linked_products": [ProductInDB.model_validate(p) for p in linked_products],
+                "brand": brand,
+                "category": category,
+                "offers": all_offers
+            }
+        
+        # Not found in either table
+        return None
+
     def get_by_sku(
         self, sku: str, brand_id: Optional[UUID] = None
     ) -> Optional[ProductInDB]:

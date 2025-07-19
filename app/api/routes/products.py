@@ -281,12 +281,10 @@ async def upsert_product_group_and_product(
         product_jsons = []
         for el in item_list:
             item = el.get("item")
-            if not item or not item.get("@id"):
-                continue
             if item.get("@type") == "ProductGroup":
                 product_group_json = item
             elif item.get("@type") == "Product":
-                product_jsons.append(item)
+                product_jsons.append(el)
 
         if not product_group_json and not product_jsons:
             raise HTTPException(status_code=400, detail="At least one of ProductGroup or Product type object must be present in itemListElement")
@@ -378,9 +376,10 @@ async def upsert_product_group_and_product(
 
         # Need to test product scenario's, product group related working as expected.
         # --- Product Handling ---
-        for product_json in product_jsons:
+        for product in product_jsons:
+            position = product.get("position", 0)
+            product_json = product.get("item")
             # Get position from the product JSON object itself
-            position = product_json.get("position", 0)
             urn = product_json.get("@id")
             if not urn:
                 logger.error(f"Product at position {position} missing @id field")

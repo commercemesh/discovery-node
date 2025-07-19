@@ -9,6 +9,6 @@ ingestion:
   # Mode 2: Platform adapters (single brand)  
   - name: "acme-corp"
     source_type: "local"
-    registry: "/Users/mac/workspace/projects/commercemesh/discovery-node/samples/acme-solutions/brand-registory.json"
-    feed_path: "/Users/mac/workspace/projects/commercemesh/discovery-node/samples/acme-solutions/feed/feed.json"
+    registry: "samples/acme-solutions/brand-registory.json"
+    feed_path: "samples/acme-solutions/feed/feed.json"
     schedule: "0 */4 * * *"

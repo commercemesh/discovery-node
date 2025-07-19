@@ -106,7 +106,7 @@ async def get_products(
 
 
 @products_router.get(
-    "/products/{sku_urn}",
+    "/product/{sku_urn}",
     response_model=ProductDetailResponse,
     responses={
         200: {

@@ -18,6 +18,7 @@ def test_category(db_session) -> Category:
     """Test category object in database."""
     category = Category(
         id=uuid4(),
+        slug="childrens-books",
         name="Children's Books",
         description="Books for children",
     )
@@ -28,12 +29,13 @@ def test_category(db_session) -> Category:
 
 
 @pytest.fixture
-def test_brand(db_session) -> Brand:
+def test_brand(db_session, test_organization) -> Brand:
     """Test brand object in database."""
     brand = Brand(
         id=uuid4(),
         name="Test Brand",
-        description="A test brand for testing",
+        urn=f"urn:cmp:brand:test-brand-{uuid4().hex[:8]}",
+        organization_id=test_organization.id,
     )
     db_session.add(brand)
     db_session.commit()
@@ -56,13 +58,17 @@ def test_organization(db_session) -> Organization:
 
 
 @pytest.fixture
-def test_product_group(db_session) -> ProductGroup:
+def test_product_group(db_session, test_category, test_brand, test_organization) -> ProductGroup:
     """Test product group object in database."""
     group = ProductGroup(
         id=uuid4(),
         urn=f"urn:cmp:product:test-group-{uuid4().hex[:8]}",
         name="The Boy with the Big Hair",
-        category="",
+        product_group_id=f"test-group-{uuid4().hex[:8]}",
+        varies_by=["color", "size"],
+        category_id=test_category.id,
+        brand_id=test_brand.id,
+        organization_id=test_organization.id,
         raw_data={
             "@cmp:media": [
                 {

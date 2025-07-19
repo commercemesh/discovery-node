@@ -296,7 +296,7 @@ async def upsert_product_group_and_product(
         product_service = ProductService(db)
         brand_service = BrandService(db)
 
-        upserted = {"product_group_id": None, "product_ids": []}
+        upserted = {"product_group_id": None, "successful_products": [], "errors": []}
 
         # --- Product Group Handling ---
         brand_id: Optional[UUID] = None
@@ -304,80 +304,217 @@ async def upsert_product_group_and_product(
         if product_group_json:
             urn = product_group_json.get("@id")
             if not urn:
-                raise HTTPException(status_code=400, detail="ProductGroup missing @id")
+                logger.error("ProductGroup missing @id field")
+                upserted["errors"].append({
+                    "position": 0,  # Product group doesn't have position in the same way
+                    "type": "ProductGroup",
+                    "urn": urn or "missing",
+                    "error": "ProductGroup missing @id field"
+                })
+                raise HTTPException(status_code=400, detail="ProductGroup missing @id field")
             # Check for brand dict
             brand_dict = product_group_json.get("brand")
             if not brand_dict or not brand_dict.get("name"):
+                logger.error(f"ProductGroup {urn} missing brand dict or brand name")
+                upserted["errors"].append({
+                    "position": 0,
+                    "type": "ProductGroup",
+                    "urn": urn,
+                    "error": "ProductGroup missing brand dict or brand name"
+                })
                 raise HTTPException(status_code=400, detail="ProductGroup missing brand dict or brand name")
             brand_name = brand_dict["name"]
             # Try to fetch brand by name
             brand = brand_service.get_by_name(brand_name)
             if not brand:
                 # Create brand using process_brand
-                brand_data = {"name": brand_name, "identifier": {"value": None}}
-                brand_id_val = brand_service.process_brand(brand_data, organization_id)
-                brand = brand_service.get_brand(brand_id_val)
+                try:
+                    brand_data = {"name": brand_name, "identifier": {"value": None}}
+                    brand_id_val = brand_service.process_brand(brand_data, organization_id)
+                    brand = brand_service.get_brand(brand_id_val)
+                except Exception as e:
+                    logger.error(f"Failed to create brand {brand_name} for product group {urn}: {str(e)}")
+                    upserted["errors"].append({
+                        "position": 0,
+                        "type": "ProductGroup",
+                        "urn": urn,
+                        "error": f"Failed to create brand {brand_name}: {str(e)}"
+                    })
+                    raise HTTPException(status_code=500, detail=f"Failed to create brand: {str(e)}")
             if not brand or not brand.id:
+                logger.error(f"Failed to resolve or create brand {brand_name} for product group {urn}")
+                upserted["errors"].append({
+                    "position": 0,
+                    "type": "ProductGroup",
+                    "urn": urn,
+                    "error": f"Failed to resolve or create brand {brand_name}"
+                })
                 raise HTTPException(status_code=500, detail="Failed to resolve or create brand")
             brand_id = brand.id
             # Upsert product group
-            pg_id = product_group_service.process_product_group(product_group_json, brand_id, organization_id)
-            upserted["product_group_id"] = str(pg_id) if pg_id else None
+            try:
+                pg_id = product_group_service.process_product_group(product_group_json, brand_id, organization_id)
+                if pg_id:
+                    logger.info(f"Successfully processed product group {urn}")
+                    upserted["product_group_id"] = str(pg_id)
+                else:
+                    logger.error(f"Failed to process product group {urn} - no ID returned")
+                    upserted["errors"].append({
+                        "position": 0,
+                        "type": "ProductGroup",
+                        "urn": urn,
+                        "error": "Failed to process product group - no ID returned"
+                    })
+            except Exception as e:
+                logger.error(f"Failed to process product group {urn}: {str(e)}")
+                upserted["errors"].append({
+                    "position": 0,
+                    "type": "ProductGroup",
+                    "urn": urn,
+                    "error": f"Failed to process product group: {str(e)}"
+                })
+                raise HTTPException(status_code=500, detail=f"Failed to process product group: {str(e)}")
             category_name = product_group_json.get("category")
 
         # Need to test product scenario's, product group related working as expected.
         # --- Product Handling ---
         for product_json in product_jsons:
+            # Get position from the product JSON object itself
+            position = product_json.get("position", 0)
             urn = product_json.get("@id")
             if not urn:
+                logger.error(f"Product at position {position} missing @id field")
+                upserted["errors"].append({
+                    "position": position,
+                    "type": "Product",
+                    "urn": urn or "missing",
+                    "error": "Product missing @id field"
+                })
                 continue  # skip invalid product
             is_variant_of = product_json.get("isVariantOf")
             if not product_group_json:
                 # Product ONLY cases
                 if not is_variant_of:
-                    # Upsert product without product group
+                    # Upsert product without product group and isVariantOf reference
                     # We need a brand and category
-                    brand_dict = product_json.get("brand")
-                    if not brand_dict or not brand_dict.get("name"):
+                    # Extract URN
+                    urn = product_json.get("@id", "")
+
+                    if not urn:
+                        logger.error(f"Product at position {position} missing required @id field")
+                        upserted["errors"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn or "missing",
+                            "error": "Product data missing required @id field"
+                        })
+                        continue
+
+                    # Check if product already exists
+                    existing_product = product_service.get_by_urn(urn)
+                    if not existing_product:
+                        logger.error(f"Cannot process product {urn} at position {position} without product group or isVariantOf reference")
+                        upserted["errors"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn,
+                            "error": "Cannot process product without product group or isVariantOf reference"
+                        })
                         continue  # skip invalid product
-                    brand_name = brand_dict["name"]
-                    brand = brand_service.get_by_name(brand_name)
-                    if not brand:
-                        brand_data = {"name": brand_name, "identifier": {"value": None}}
-                        brand_id_val = brand_service.process_brand(brand_data, organization_id)
-                        brand = brand_service.get_brand(brand_id_val)
-                    if not brand or not brand.id:
-                        continue  # skip if cannot resolve brand
-                    brand_id = brand.id
-                    category_name = product_json.get("category")
-                    if not category_name:
-                        continue  # skip if no category
-                    prod_id = product_service.process_product(product_json, brand_id, category_name)
-                    if prod_id:
-                        upserted["product_ids"].append(str(prod_id))
+
+                    brand_id = existing_product.brand_id
+                    category_name = existing_product.category.name if existing_product.category else ""
+                    try:
+                        prod_id = product_service.process_product(product_json, brand_id, category_name)
+                        if prod_id:
+                            logger.info(f"Successfully processed product {urn} at position {position}")
+                            upserted["successful_products"].append({
+                                "position": position,
+                                "type": "Product",
+                                "urn": urn,
+                                "product_id": str(prod_id)
+                            })
+                    except Exception as e:
+                        logger.error(f"Failed to process product {urn} at position {position}: {str(e)}")
+                        upserted["errors"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn,
+                            "error": f"Failed to process product: {str(e)}"
+                        })
                 else:
                     # Product ONLY WITH isVariantOf
                     variant_urn = is_variant_of.get("@id") if isinstance(is_variant_of, dict) else None
                     if not variant_urn:
+                        logger.error(f"Product {urn} at position {position} isVariantOf missing @id")
+                        upserted["errors"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn,
+                            "error": "Product isVariantOf missing @id"
+                        })
                         continue  # skip invalid variant
                     # Check if product group exists
                     pg = product_group_service.get_by_urn(variant_urn)
-                    if not pg or not pg.brand_id:
-                        continue  # skip if product group does not exist
+                    if not pg:
+                        logger.error(f"Cannot process product {urn} at position {position} without product group, invalid product group reference: {variant_urn}")
+                        upserted["errors"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn,
+                            "error": f"Cannot process product without product group, invalid product group reference: {variant_urn}"
+                        })
+                        continue  # skip invalid product
+                    
                     brand_id = pg.brand_id
-                    category_name = pg.category if hasattr(pg, 'category') and pg.category else None
-                    if not category_name:
-                        continue  # skip if no category
-                    prod_id = product_service.process_product(product_json, brand_id, category_name)
-                    if prod_id:
-                        upserted["product_ids"].append(str(prod_id))
+                    category_name = pg.category.name if pg.category else ""
+                    try:
+                        prod_id = product_service.process_product(product_json, brand_id, category_name)
+                        if prod_id:
+                            logger.info(f"Successfully processed product {urn} at position {position} with variant reference")
+                            upserted["successful_products"].append({
+                                "position": position,
+                                "type": "Product",
+                                "urn": urn,
+                                "product_id": str(prod_id)
+                            })
+                    except Exception as e:
+                        logger.error(f"Failed to process product {urn} at position {position}: {str(e)}")
+                        upserted["errors"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn,
+                            "error": f"Failed to process product: {str(e)}"
+                        })
             else:
                 # Both product group and product present
                 if not brand_id or not category_name:
+                    logger.error(f"Cannot process product {urn} at position {position} without brand or category from product group")
+                    upserted["errors"].append({
+                        "position": position,
+                        "type": "Product",
+                        "urn": urn,
+                        "error": "Cannot process product without brand or category from product group"
+                    })
                     continue  # skip if not resolved
-                prod_id = product_service.process_product(product_json, brand_id, category_name)
-                if prod_id:
-                    upserted["product_ids"].append(str(prod_id))
+                try:
+                    prod_id = product_service.process_product(product_json, brand_id, category_name)
+                    if prod_id:
+                        logger.info(f"Successfully processed product {urn} at position {position} with product group")
+                        upserted["successful_products"].append({
+                            "position": position,
+                            "type": "Product",
+                            "urn": urn,
+                            "product_id": str(prod_id)
+                        })
+                except Exception as e:
+                    logger.error(f"Failed to process product {urn} at position {position}: {str(e)}")
+                    upserted["errors"].append({
+                        "position": position,
+                        "type": "Product",
+                        "urn": urn,
+                        "error": f"Failed to process product: {str(e)}"
+                    })
         return upserted
     except HTTPException:
         raise

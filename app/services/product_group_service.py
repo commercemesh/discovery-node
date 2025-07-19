@@ -2,6 +2,8 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 import logging
+from xdrlib import raise_conversion_error
+
 from app.db.repositories.product_group_repository import ProductGroupRepository
 from app.services.category_service import CategoryService
 from app.schemas.product_group import (
@@ -134,8 +136,10 @@ class ProductGroupService:
         # Extract category information
         category_name = product_group_data.get("category", "")
         if not category_name:
-            logger.error(f"Product group {urn} missing required category name")
-            raise ValueError(f"Product group {urn} missing required category name")
+            logger.error(f"Product group {urn} missing category name, using 'unknown' category")
+            # raise ValueError(f"Product group {urn} missing required category name")
+            category_name = 'unknown'
+
         category_slug = self._slugify(category_name)
         # Always compare lower-case for uniqueness
         category = self.category_service.category_repo.get_by_slug(
@@ -149,6 +153,14 @@ class ProductGroupService:
                 CategoryCreate(slug=category_slug.lower(), name=category_name)
             )
         category_id = category.id
+        external_product_group_id = product_group_data.get("productGroupID", "")
+        if external_product_group_id:
+            external_product_group = self.product_group_repo.get_by_product_group_id(external_product_group_id)
+            if external_product_group and external_product_group_id != product_group_id:
+                err_msg = f"An product group with external identifier(productGroupID): {external_product_group} already exist, can not upsert product group"
+                logger.error(err_msg)
+                raise Exception(err_msg)
+
 
         # Create product group data
         product_group_create_data = ProductGroupCreate(

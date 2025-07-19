@@ -1,6 +1,4 @@
 # tests/services/test_brand_service.py
-import pytest
-from uuid import UUID
 
 
 def test_process_brand(brand_service, organization_service, test_organization_data):

@@ -106,6 +106,7 @@ class ProductForVector(BaseModel):
     """Schema for products specifically formatted for vector processing"""
 
     id: str = Field(..., description="Product ID as string")
+    urn: str = Field(..., description="Product URN")
     name: str = Field(..., description="Product name")
     description: Optional[str] = Field(None, description="Product description")
     brand_name: Optional[str] = Field(None, description="Brand name")
@@ -124,6 +125,7 @@ class ProductForVector(BaseModel):
         """Create ProductForVector from a Product model with loaded relations"""
         return cls(
             id=str(product.id),
+            urn=product.urn,
             name=product.name,
             description=product.description,
             brand_name=product.brand.name if product.brand else None,

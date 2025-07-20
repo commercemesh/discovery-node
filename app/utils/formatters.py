@@ -201,11 +201,14 @@ def format_product_item(
                     "price": offer["price"],
                     "priceCurrency": offer["currency"],
                     "availability": f"https://schema.org/{offer['availability']}",
-                    "seller": {
+                }
+                
+                # Add seller if available
+                if offer.get('seller_id'):
+                    offer_obj["seller"] = {
                         "@type": "Organization",
                         "@id": f"urn:cmp:brand:{offer['seller_id']}",
-                    },
-                }
+                    }
                 # Add optional fields
                 for key in ["inventory_level", "price_valid_until", "shipping_speed_tier"]:
                     if key in offer:

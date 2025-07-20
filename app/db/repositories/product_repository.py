@@ -241,6 +241,7 @@ class ProductRepository:
                 selectinload(Product.offers),
             )
             .filter(Product.organization_id == org_id)
+            .order_by(Product.id)  # IMPORTANT: Consistent ordering for pagination
             .offset(offset)
             .limit(limit)
             .all()
@@ -267,6 +268,20 @@ class ProductRepository:
                 selectinload(Product.offers),
             )
             .filter(Product.id.in_(product_ids))
+            .all()
+        )
+    
+    def get_products_by_urns(self, urns: List[str]) -> List[Product]:
+        """Get multiple products by their URNs with relations"""
+        return (
+            self.db_session.query(Product)
+            .options(
+                selectinload(Product.brand),
+                selectinload(Product.category),
+                selectinload(Product.offers),
+                selectinload(Product.product_group),
+            )
+            .filter(Product.urn.in_(urns))
             .all()
         )
 

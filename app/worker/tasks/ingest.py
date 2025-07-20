@@ -171,30 +171,6 @@ def ingest_feed(self, ingestor_name, ingestor_config):
         result = manager.ingest_feed(ingestor_config)
         logger.info(f"Completed product feed ingestion for {ingestor_name}: {result}")
 
-        # After successful feed ingestion, trigger vector ingestion
-        # Find the registry path for this ingestor
-        # registry_path = None
-        # try:
-        #     ingestors = manager.get_ingestors()
-        #     for ingestor in ingestors:
-        #         if ingestor["name"] == ingestor_name:
-        #             registry_path = ingestor.get("registry_path") or ingestor.get(
-        #                 "registry"
-        #             )
-        #             break
-        # except Exception as e:
-        #     logger.warning(
-        #         f"Could not determine registry_path for vector ingestion: {e}"
-        #     )
-
-        # if registry_path:
-        #     from app.worker.tasks.ingest import ingest_vector
-
-        #     # ingest_vector.delay(ingestor_name, ingestor_config)
-        # else:
-        #     logger.warning(
-        #         f"No registry_path found for vector ingestion for ingestor {ingestor_name}"
-        #     )
 
         return {
             "status": "success",

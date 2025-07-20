@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Path
-from app.services.search_service import SearchService
+from app.services.search import SearchServiceFactory
 from app.services.product_service import ProductService
 from app.schemas.product import ProductSearchResponse, ProductByUrnResponse
 from app.db.base import get_db_session
@@ -75,7 +75,7 @@ async def get_products(
                 detail="Search query cannot be empty",
             )
 
-        search_service = SearchService(db)
+        search_service = SearchServiceFactory.create(db)
         results = search_service.search_products(q)
 
         response_data = format_product_search_response(results)

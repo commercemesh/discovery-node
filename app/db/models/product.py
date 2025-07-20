@@ -2,6 +2,7 @@
 from sqlalchemy import Column, String, Text, ForeignKey, UUID, Float, Integer, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from pgvector.sqlalchemy import Vector
 from app.db.base import Base
 import uuid
 
@@ -49,6 +50,12 @@ class Product(Base):
         JSONB, default={}, comment="Attributes that differentiate this variant"
     )
     raw_data = Column(JSONB, comment="Full JSON-LD representation of the product")
+    
+    # Vector embedding for similarity search
+    embedding = Column(
+        Vector(1536),  # text-embedding-3-small dimension (configurable)
+        comment="Dense embedding vector for semantic search"
+    )
 
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

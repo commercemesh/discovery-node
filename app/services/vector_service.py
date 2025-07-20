@@ -3,7 +3,7 @@ import logging
 from uuid import UUID
 from app.core.config import settings
 from app.db.repositories.product_repository import ProductRepository
-from app.db.repositories.vector_repository import VectorRepository
+from app.db.repositories.vector_repository_native import VectorRepository
 from app.schemas.product import ProductForVector
 from dataclasses import dataclass
 from typing import List
@@ -59,7 +59,7 @@ class VectorService:
 
         canonical_text = " ".join(parts)
 
-        logger.info(f"Canonical text: {canonical_text}")
+        # logger.info(f"Canonical text: {canonical_text}")
 
         return canonical_text
 
@@ -80,13 +80,13 @@ class VectorService:
         for product in products:
             try:
                 record = {
-                    "id": product.id,
+                    "id": product.urn,  # Use URN for consistency with pgvector
                     "canonical_text": self._canonical_text(product),
                     **self._add_metadata(product),
                 }
                 records.append(record)
             except Exception as e:
-                logger.error(f"Error preparing record for product {product.id}: {e}")
+                logger.error(f"Error preparing record for product {product.urn}: {e}")
         logger.info(f"Prepared {len(records)} records out of {len(products)} products")
         return records
 
@@ -133,7 +133,7 @@ class VectorService:
                 logger.info(
                     f"Upserting {len(records)} records into dense index (batch {batch_num})"
                 )
-                self.vector_repository.upsert_products_into_dense_index(records)
+                self.vector_repository.upsert_products_into_dense_index(records, db=self.db_session)
                 logger.info(
                     f"Dense index: successfully processed {len(records)} records (batch {batch_num})"
                 )

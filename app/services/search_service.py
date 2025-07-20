@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from app.core.logging import get_logger
-from app.db.repositories.vector_repository import VectorRepository
+from app.db.repositories.vector_repository_native import VectorRepository
 from app.db.repositories.product_repository import ProductRepository
 import time
 

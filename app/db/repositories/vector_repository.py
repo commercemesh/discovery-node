@@ -63,10 +63,11 @@ class VectorRepository:
 
         try:
             results = self.dense_index.search(
-                namespace=self.namespace, query={"top_k": 40, "inputs": {"text": query}}
+                namespace=self.namespace, query={"top_k": top_k, "inputs": {"text": query}}
             )
 
             query_time = time.time() - start_time
+            logger.info(f"✅ Dense query completed in {query_time:.3f}s")
 
             return results
 
@@ -92,4 +93,20 @@ class VectorRepository:
         include_metadata: bool = True,
     ):
         """Search for products using Pinecone's sparse index"""
-        return self._search_products(query, top_k, alpha, include_metadata)
+        start_time = time.time()
+        logger.info("🔍 Starting sparse index query with inference...")
+        logger.info(f"the query is {query}")
+
+        try:
+            results = self.sparse_index.search(
+                namespace=self.namespace, query={"top_k": top_k, "inputs": {"text": query}}
+            )
+
+            query_time = time.time() - start_time
+            logger.info(f"✅ Sparse query completed in {query_time:.3f}s")
+
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ Sparse query failed: {str(e)}")
+            raise

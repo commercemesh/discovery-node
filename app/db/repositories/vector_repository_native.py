@@ -97,10 +97,10 @@ class VectorRepository:
             product_id = record["id"]
             embedding = embeddings[i]
             
-            # Update the product's embedding using UUID cast
+            # Update the product's embedding using URN
             db.execute(
-                text("UPDATE products SET embedding = :embedding WHERE id = CAST(:product_id AS uuid)"),
-                {"embedding": embedding, "product_id": product_id}
+                text("UPDATE products SET embedding = :embedding WHERE urn = :product_urn"),
+                {"embedding": embedding, "product_urn": product_id}
             )
         
         db.commit()

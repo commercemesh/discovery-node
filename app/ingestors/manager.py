@@ -216,7 +216,10 @@ class IngestorManager:
                     )
 
 
+                    # Extract org URN - try multiple locations for compatibility
                     org_urn = feed_index.get("orgid")
+                    if not org_urn and feed_index.get("organization"):
+                        org_urn = feed_index["organization"].get("urn")
                     logger.info(f"Starting feed ingestion for orgid: {org_urn}")
                     logger.debug(f"Feed index keys: {list(feed_index.keys())}")
                     logger.debug(f"Full feed index: {feed_index}")

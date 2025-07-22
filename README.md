@@ -1,16 +1,19 @@
 # Discovery Node
 
-A product discovery engine that uses AI to find products that match search queries. Built with FastAPI, Celery, PostgreSQL, and Pinecone for vector search.
+A high-performance product discovery engine that uses AI-powered semantic search to find products matching natural language queries. Built with FastAPI, PostgreSQL, and supports multiple vector storage backends (PGVector and Pinecone) for scalable semantic search capabilities.
 
 ## 🚀 Features
 
-- **Product Discovery**: AI-powered product search and matching
-- **Data Ingestion**: Automated ingestion from CMP feeds and local sources
-- **Vector Search**: Semantic search using Pinecone vector database
-- **Scheduled Tasks**: Background processing with Celery
-- **REST API**: FastAPI-based API with automatic documentation
+- **AI-Powered Search**: Natural language product search using state-of-the-art embeddings
+- **Multiple Vector Backends**: Support for both PGVector (PostgreSQL) and Pinecone
+- **Hybrid Search**: Combines semantic search with traditional filtering
+- **Data Ingestion**: Automated ingestion from various feed formats
+- **Scheduled Tasks**: Background processing with Celery for continuous updates
+- **REST API**: FastAPI-based API with automatic OpenAPI documentation
 - **MCP Server**: Model Context Protocol server for AI assistant integration
-- **Multi-brand Support**: Handle multiple brands and organizations
+- **Multi-tenant Support**: Handle multiple brands and organizations
+- **Full-Text Search**: Tantivy-based search engine for text matching
+- **Scalable Architecture**: Microservices design with Redis message queue
 
 ## 🏗️ Architecture
 
@@ -23,17 +26,18 @@ A product discovery engine that uses AI to find products that match search queri
          │                       │                       │
          ▼                       ▼                       ▼
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Pinecone      │    │   Redis         │    │   Data Sources  │
-│   Vector DB     │    │   Message Queue │    │   (CMP Feeds)   │
+│  Vector Storage │    │   Redis         │    │   Search Engine │
+│ PGVector/Pinecone│    │   Message Queue │    │    Tantivy      │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ## 📋 Prerequisites
 
 - Python 3.10+
-- PostgreSQL
-- Redis
-- Pinecone account and API key
+- PostgreSQL 14+ (with pgvector extension if using PGVector backend)
+- Redis 6+
+- OpenAI API key (for embeddings)
+- Optional: Pinecone account (if using Pinecone backend)
 
 ## 🛠️ Installation
 
@@ -54,7 +58,7 @@ A product discovery engine that uses AI to find products that match search queri
 
 3. **Set up environment variables**
    ```bash
-   cp .env.example .env
+   cp .env.sample .env
    # Edit .env with your configuration
    ```
 
@@ -64,9 +68,12 @@ A product discovery engine that uses AI to find products that match search queri
    alembic upgrade head
    ```
 
-5. **Set up Pinecone**
+5. **Initialize vector storage**
    ```bash
-   # Run the Pinecone setup script
+   # If using PGVector (default)
+   # The pgvector extension will be created automatically
+   
+   # If using Pinecone
    python scripts/setup_pinecone.py
    ```
 
@@ -74,28 +81,13 @@ A product discovery engine that uses AI to find products that match search queri
 
 ### Environment Variables
 
-Create a `.env` file with the following variables:
+See `.env.sample` for a complete list of configuration options. Key variables include:
 
-```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/discovery_db
-
-# Redis (for Celery)
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-
-# Pinecone
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_ENVIRONMENT=your_environment
-PINECONE_DENSE_INDEX=your_dense_index_name
-PINECONE_SPARSE_INDEX=your_sparse_index_name
-
-# Application
-DEBUG=true
-LOG_LEVEL=info
-DATA_DIR=/path/to/your/data
-INGESTION_CONFIG_PATH=/path/to/ingestion.yaml
-```
+- `DATABASE_URL`: PostgreSQL connection string
+- `VECTOR_STORAGE_BACKEND`: Choose between `pgvector` (default) or `pinecone`
+- `EMBEDDING_API_KEY`: OpenAI API key for generating embeddings
+- `REDIS_URL`: Redis connection for Celery tasks
+- `SEARCH_BACKEND`: Choose between `tantivy` (default) or `opensearch`
 
 ### Ingestion Configuration
 
@@ -276,8 +268,13 @@ uv run isort .
 ## 📊 API Endpoints
 
 ### Products
-- `GET /api/products` - List products
-- `GET /api/products/{urn}` - to be done
+- `GET /api/products` - Search products with natural language queries
+  - Query parameters: `q` (search query), `limit`, `offset`, `brand`, `category`
+- `GET /api/products/{urn}` - Get product details by URN (coming soon)
+
+### Health & Monitoring
+- `GET /health` - Health check endpoint
+- `GET /api/stats` - System statistics (coming soon)
 
 ## 🤖 MCP Server
 

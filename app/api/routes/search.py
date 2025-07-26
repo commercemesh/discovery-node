@@ -3,8 +3,9 @@ from app.services.search import SearchServiceFactory
 from app.services.product_service import ProductService
 from app.schemas.product import ProductSearchResponse, ProductByUrnResponse
 from app.db.base import get_db_session
+from app.services.cache_service import get_cache_service
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict, Any
 from app.utils.formatters import format_product_search_response, format_product_by_urn_response
 import logging
 import urllib.parse
@@ -75,14 +76,26 @@ async def get_products(
                 detail="Search query cannot be empty",
             )
 
+        # Get cache service
+        cache_service = get_cache_service()
+        
+        # Generate cache key and add to response
+        cache_key = cache_service.generate_cache_key("search")
+        request_id = cache_key.split(":")[-1]  # Extract request ID from key
+        
         search_service = SearchServiceFactory.create(db)
         results = search_service.search_products(q)
 
         response_data = format_product_search_response(results)
+        
+        # Add request ID to response
+        response_data["cmp:requestId"] = request_id
 
         # Create the ProductSearchResponse object
         response = ProductSearchResponse(**response_data)
-
+        
+        # Cache the response
+        cache_service.cache_response(cache_key, response_data)
 
         return response
 

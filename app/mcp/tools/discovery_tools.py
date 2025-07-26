@@ -8,6 +8,10 @@ from mcp.server.lowlevel import Server
 from app.core.logging import get_logger
 from app.core.dependencies import SearchServiceFactory, ProductServiceFactory
 from app.utils.formatters import format_product_search_response
+from app.services.cache_service import get_cache_service
+from app.services.filter_service import FilterService
+from app.services.comparison_service import ComparisonService
+from app.utils.request_id import validate_request_id
 
 logger = get_logger(__name__)
 
@@ -73,6 +77,74 @@ def register_discovery_tools(
                         }
                     }
                 }
+            ),
+            types.Tool(
+                name="filter-products",
+                description="Filter cached search results using natural language criteria and price filters",
+                inputSchema={
+                    "type": "object",
+                    "required": ["request_id", "filter_criteria"],
+                    "properties": {
+                        "request_id": {
+                            "type": "string",
+                            "description": "6-character cache request ID from previous search",
+                            "pattern": "^[A-Z0-9]{6}$"
+                        },
+                        "filter_criteria": {
+                            "type": "string",
+                            "description": "Natural language filter criteria (e.g., 'waterproof', 'lightweight', 'eco friendly')"
+                        },
+                        "max_price": {
+                            "type": "number",
+                            "description": "Maximum price filter",
+                            "minimum": 0
+                        },
+                        "min_price": {
+                            "type": "number",
+                            "description": "Minimum price filter",
+                            "minimum": 0
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of results to return",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    }
+                }
+            ),
+            types.Tool(
+                name="compare-products",
+                description="Compare specific products from cached results by their indices",
+                inputSchema={
+                    "type": "object",
+                    "required": ["request_id", "indices"],
+                    "properties": {
+                        "request_id": {
+                            "type": "string",
+                            "description": "6-character cache request ID from previous search",
+                            "pattern": "^[A-Z0-9]{6}$"
+                        },
+                        "indices": {
+                            "type": "array",
+                            "description": "Product indices to compare (0-based, min 2, max 5)",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 5
+                        },
+                        "comparison_aspects": {
+                            "type": "array",
+                            "description": "Specific aspects to compare (e.g., 'price', 'features'). Auto-detected if not provided.",
+                            "items": {"type": "string"}
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "Output format: table (default), narrative, or pros_cons",
+                            "enum": ["table", "narrative", "pros_cons"],
+                            "default": "table"
+                        }
+                    }
+                }
             )
         ]
     
@@ -94,6 +166,10 @@ def register_discovery_tools(
                 return _handle_get_products_by_category(
                     product_service_factory, arguments, ctx
                 )
+            elif name == "filter-products":
+                return _handle_filter_products(arguments, ctx)
+            elif name == "compare-products":
+                return _handle_compare_products(arguments, ctx)
             else:
                 return [
                     types.TextContent(
@@ -120,6 +196,13 @@ def _handle_search_products(
     query = arguments["query"]
     limit = arguments.get("limit", 10)
     
+    # Get cache service
+    cache_service = get_cache_service()
+    
+    # Generate cache key and request ID
+    cache_key = cache_service.generate_cache_key("mcp-search")
+    request_id = cache_key.split(":")[-1]
+    
     # Send progress notification
     # Note: We can't use async ctx.session.send_log_message in sync function
     logger.info(f"Searching for products: '{query}'")
@@ -142,8 +225,14 @@ def _handle_search_products(
             ]
         
         response_data = format_product_search_response(results)
+        
+        # Add request ID to response
+        response_data["cmp:requestId"] = request_id
+        
+        # Cache the response
+        cache_service.cache_response(cache_key, response_data)
     
-    # Convert dictionary to JSON string for MCP TextContent
+        # Convert dictionary to JSON string for MCP TextContent
         response_text = json.dumps(response_data, indent=2)
        
         return [
@@ -275,5 +364,227 @@ def _handle_get_products_by_category(
             types.TextContent(
                 type="text",
                 text=response_text
+            )
+        ]
+
+
+def _handle_filter_products(
+    arguments: dict,
+    ctx
+) -> List[types.TextContent]:
+    """Handle product filtering requests"""
+    request_id = arguments["request_id"]
+    filter_criteria = arguments["filter_criteria"]
+    max_price = arguments.get("max_price")
+    min_price = arguments.get("min_price")
+    limit = arguments.get("limit")
+    
+    logger.info(f"Filtering products from request {request_id} with criteria: '{filter_criteria}'")
+    
+    # Validate request ID
+    if not validate_request_id(request_id):
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Invalid request ID format: {request_id}"
+            )
+        ]
+    
+    # Validate price range
+    if min_price is not None and max_price is not None and min_price > max_price:
+        return [
+            types.TextContent(
+                type="text",
+                text="Minimum price cannot be greater than maximum price"
+            )
+        ]
+    
+    # Create filter service
+    filter_service = FilterService()
+    
+    # Get cached data and filter
+    filtered_items, total_filtered = filter_service.filter_products(
+        request_id=request_id,
+        filter_criteria=filter_criteria,
+        max_price=max_price,
+        min_price=min_price,
+        limit=limit
+    )
+    
+    if total_filtered == 0:
+        # Check if original data exists
+        cache_service = get_cache_service()
+        original_found = False
+        for prefix in ["search", "product", "mcp-search"]:
+            cache_key = f"{prefix}:{request_id}"
+            if cache_service.get_cached_response(cache_key):
+                original_found = True
+                break
+        
+        if not original_found:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"No cached results found for request ID: {request_id}"
+                )
+            ]
+        else:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"No products found matching filter criteria: '{filter_criteria}'"
+                )
+            ]
+    
+    # Get original cached data for metadata
+    cache_service = get_cache_service()
+    cached_data = None
+    for prefix in ["search", "product", "mcp-search"]:
+        cache_key = f"{prefix}:{request_id}"
+        cached_data = cache_service.get_cached_response(cache_key)
+        if cached_data:
+            break
+    
+    # Create filtered response
+    filtered_response = filter_service.create_filtered_response(
+        cached_data=cached_data or {},
+        filtered_items=filtered_items,
+        total_filtered=total_filtered,
+        filter_criteria=filter_criteria,
+        max_price=max_price,
+        min_price=min_price
+    )
+    
+    # Generate new cache key for filtered results
+    new_cache_key = cache_service.generate_cache_key("mcp-filter")
+    new_request_id = new_cache_key.split(":")[-1]
+    
+    # Add new request ID to response
+    filtered_response["cmp:requestId"] = new_request_id
+    
+    # Cache the filtered results
+    cache_service.cache_response(new_cache_key, filtered_response)
+    
+    # Convert to JSON string for MCP
+    response_text = json.dumps(filtered_response, indent=2)
+    
+    logger.info(
+        f"Filtered {total_filtered} results with new request ID: {new_request_id}"
+    )
+    
+    return [
+        types.TextContent(
+            type="text",
+            text=response_text
+        )
+    ]
+
+
+def _handle_compare_products(
+    arguments: dict,
+    ctx
+) -> List[types.TextContent]:
+    """Handle product comparison requests"""
+    request_id = arguments["request_id"]
+    indices = arguments["indices"]
+    comparison_aspects = arguments.get("comparison_aspects")
+    format_type = arguments.get("format", "table")
+    
+    logger.info(f"Comparing products at indices {indices} from request {request_id}")
+    
+    # Validate request ID
+    if not validate_request_id(request_id):
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Invalid request ID format: {request_id}"
+            )
+        ]
+    
+    # Validate indices
+    if not isinstance(indices, list):
+        return [
+            types.TextContent(
+                type="text",
+                text="Indices must be a list of numbers"
+            )
+        ]
+    
+    # Convert indices to integers
+    try:
+        indices = [int(idx) for idx in indices]
+    except (ValueError, TypeError):
+        return [
+            types.TextContent(
+                type="text",
+                text="All indices must be valid integers"
+            )
+        ]
+    
+    # Create comparison service
+    comparison_service = ComparisonService()
+    
+    try:
+        # Perform comparison
+        comparison_result = comparison_service.compare_products(
+            request_id=request_id,
+            indices=indices,
+            comparison_aspects=comparison_aspects,
+            format_type=format_type
+        )
+        
+        # Convert to JSON string for MCP
+        response_text = json.dumps(comparison_result, indent=2)
+        
+        logger.info(
+            f"Compared {len(indices)} products with new request ID: {comparison_result['cmp:requestId']}"
+        )
+        
+        return [
+            types.TextContent(
+                type="text",
+                text=response_text
+            )
+        ]
+        
+    except ValueError as e:
+        error_msg = str(e)
+        
+        # Format error messages
+        if "No cached results found" in error_msg:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"No cached results found for request ID: {request_id}"
+                )
+            ]
+        elif "out of range" in error_msg:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=error_msg
+                )
+            ]
+        elif "Maximum 5 products" in error_msg:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=error_msg
+                )
+            ]
+        else:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Comparison error: {error_msg}"
+                )
+            ]
+    
+    except Exception as e:
+        logger.error(f"Error comparing products: {str(e)}", exc_info=True)
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Error comparing products: {str(e)}"
             )
         ]

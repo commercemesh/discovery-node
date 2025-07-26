@@ -1,11 +1,11 @@
 ingestion:
     # Mode 1: Native CMP feeds (single brand)
-    - name: "insight-editions"
-      source_type: "cmp"
-      registry: "https://github.com/commercemesh/commercemesh/blob/main/registry/brands.json"
-      filter:
-        organization: ["urn:cmp:org:11cdde9b-6a0c-5c18-8d01-11f701089cc2"]
-      schedule: "0 */4 * * *"
+    # - name: "insight-editions"
+    #   source_type: "cmp"
+    #   registry: "https://github.com/commercemesh/commercemesh/blob/main/registry/brands.json"
+    #   filter:
+    #     organization: ["urn:cmp:org:11cdde9b-6a0c-5c18-8d01-11f701089cc2"]
+    #   schedule: "0 */4 * * *"
 
   #Mode 2: Platform adapters (single brand)  
   # - name: "acme-solutions"
@@ -14,8 +14,8 @@ ingestion:
   #   feed_path: "samples/acme-solutions/feed/feed.json"
   #   schedule: "0 */4 * * *"
 
-    # - name: "insight-editions"
-    #   source_type: "local"
-    #   registry: "samples/Insight-editions.myshopify.com/brand-registory.json"
-    #   feed_path: "samples/Insight-editions.myshopify.com/feed/feed.json"
-    #   schedule: "0 */4 * * *"
+    - name: "insight-editions"
+      source_type: "local"
+      registry: "samples/Insight-editions.myshopify.com/brand-registory.json"
+      feed_path: "samples/Insight-editions.myshopify.com/feed/feed.json"
+      schedule: "0 */4 * * *"

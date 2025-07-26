@@ -158,6 +158,9 @@ class ProductSearchResponse(BaseModel):
     cmp_nodeVersion: Optional[str] = Field(
         None, alias="cmp:nodeVersion", description="Node version"
     )
+    cmp_requestId: Optional[str] = Field(
+        None, alias="cmp:requestId", description="Request ID for caching"
+    )
     datePublished: Optional[str] = Field(
         None, description="Publication date in ISO format"
     )
@@ -166,13 +169,16 @@ class ProductSearchResponse(BaseModel):
 class ProductByUrnResponse(BaseModel):
     """Product by URN response model in JSON-LD ItemList format"""
 
-    context: str = Field(
+    context: Union[str, Dict[str, str]] = Field(
         default="https://schema.org",
         alias="@context",
         description="JSON-LD context",
     )
     type: str = Field(default="ItemList", alias="@type", description="Schema.org type")
     itemListElement: List[Dict[str, Any]] = Field(..., description="List containing ProductGroup and Product")
+    cmp_requestId: Optional[str] = Field(
+        None, alias="cmp:requestId", description="Request ID for caching"
+    )
 
     class Config:
         populate_by_name = True

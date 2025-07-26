@@ -78,6 +78,8 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
 
 
   # Celery worker for background tasks
@@ -149,6 +151,8 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
 
 
   # Celery beat scheduler for periodic tasks
@@ -220,6 +224,8 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
 
   # MCP StreamableHTTP server
   - type: web
@@ -289,6 +295,8 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
 
 
   # Redis for MCP event store and Celery broker

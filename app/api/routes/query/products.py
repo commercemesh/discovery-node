@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException, status, Depends, Path
 from app.services.product_service import ProductService
 from app.schemas.product import ProductByUrnResponse
 from app.db.base import get_db_session
+from app.services.cache_service import get_cache_service
+from app.core.dependencies import OrganizationId
 from sqlalchemy.orm import Session
+from typing import Optional
+from uuid import UUID
 from app.utils.formatters import format_product_by_urn_response
 import logging
 import urllib.parse
@@ -11,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 products_router = APIRouter(
-    prefix="/v1",
     responses={
         404: {"description": "Not found"},
         500: {"description": "Internal server error"},
@@ -63,6 +66,7 @@ async def get_product_by_urn(
         min_length=1,
         max_length=500,
     ),
+    organization_id: OrganizationId = None,
     db: Session = Depends(get_db_session),
 ) -> ProductByUrnResponse:
     """
@@ -105,8 +109,15 @@ async def get_product_by_urn(
                 detail="Invalid URN format - must start with 'urn:'",
             )
 
+        # Get cache service
+        cache_service = get_cache_service()
+        
+        # Generate cache key and add to response
+        cache_key = cache_service.generate_cache_key("product")
+        request_id = cache_key.split(":")[-1]  # Extract request ID from key
+        
         product_service = ProductService(db)
-        product_details = product_service.get_product_with_details_by_urn(decoded_urn)
+        product_details = product_service.get_product_with_details_by_urn(decoded_urn, organization_id)
 
         if not product_details:
             raise HTTPException(
@@ -115,9 +126,15 @@ async def get_product_by_urn(
             )
 
         response_data = format_product_by_urn_response(product_details)
+        
+        # Add request ID to response
+        response_data["cmp:requestId"] = request_id
 
         # Create the ProductByUrnResponse object
         response = ProductByUrnResponse(**response_data)
+        
+        # Cache the response
+        cache_service.cache_response(cache_key, response_data)
 
         return response
 

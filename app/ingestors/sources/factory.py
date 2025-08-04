@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 from app.ingestors.sources.base import BaseSource
 from app.ingestors.sources.local import LocalSource
 from app.ingestors.sources.cmp import CMPSource
+from app.ingestors.sources.managed import ManagedSource
 from app.ingestors.base import SourceError
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ class SourceFactory:
             return LocalSource(config)
         elif source_type == "cmp":
             return CMPSource(config)
+        elif source_type == "managed":
+            return ManagedSource(config)
         # elif source_type == "remote":
         #     return RemoteSource(config)
         # elif source_type == "ftp":

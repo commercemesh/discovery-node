@@ -179,3 +179,188 @@ class VectorService:
                 f"Errors encountered during upsert_products: {result.errors}"
             )
         return result
+    
+    def upsert_product_by_urn(self, product_urn: str) -> UpsertResult:
+        """
+        Upsert a single product into vector storage by its URN.
+        
+        Args:
+            product_urn: The URN of the product to upsert
+            
+        Returns:
+            UpsertResult with operation details
+        """
+        logger.info(f"Starting upsert_product_by_urn for urn={product_urn}")
+        start_time = time.time()
+        
+        result = UpsertResult(
+            total_products=0,
+            successful_records=0,
+            failed_records=0,
+            dense_index_success=True,
+            sparse_index_success=True,
+            errors=[],
+            processing_time=0.0,
+        )
+        
+        # Get the product by URN
+        product = self.product_repository.get_by_urn(product_urn)
+        if not product:
+            error_msg = f"Product not found with URN: {product_urn}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            result.failed_records = 1
+            result.processing_time = time.time() - start_time
+            return result
+        
+        # Get product for vector format
+        products = self.product_repository.get_products_for_vector(
+            offset=0, 
+            limit=1, 
+            org_id=product.organization_id,
+            product_id=product.id
+        )
+        
+        if not products:
+            error_msg = f"Could not fetch product data for URN: {product_urn}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            result.failed_records = 1
+            result.processing_time = time.time() - start_time
+            return result
+        
+        # Process the single product
+        result.total_products = 1
+        records = self._prepare_records(products)
+        
+        if not records:
+            result.failed_records = 1
+            result.errors.append(f"Failed to prepare record for product {product_urn}")
+            result.processing_time = time.time() - start_time
+            return result
+        
+        # Upsert to dense index
+        try:
+            logger.info(f"Upserting product {product_urn} into dense index")
+            self.vector_repository.upsert_products_into_dense_index(records, db=self.db_session)
+            logger.info(f"Dense index: successfully processed product {product_urn}")
+        except Exception as e:
+            logger.error(f"Dense index error for {product_urn}: {str(e)}")
+            result.dense_index_success = False
+            result.failed_records = 1
+            result.errors.append(f"Dense index error: {str(e)}")
+        
+        # Upsert to sparse index
+        try:
+            logger.info(f"Upserting product {product_urn} into sparse index")
+            self.vector_repository.upsert_products_into_sparse_index(records)
+            logger.info(f"Sparse index: successfully processed product {product_urn}")
+        except Exception as e:
+            logger.error(f"Sparse index error for {product_urn}: {str(e)}")
+            result.sparse_index_success = False
+            result.failed_records = 1
+            result.errors.append(f"Sparse index error: {str(e)}")
+        
+        if result.dense_index_success and result.sparse_index_success:
+            result.successful_records = 1
+            result.failed_records = 0
+        
+        result.processing_time = time.time() - start_time
+        logger.info(
+            f"Finished upsert_product_by_urn for {product_urn}. Success: {result.successful_records == 1}, Time: {result.processing_time:.2f}s"
+        )
+        return result
+    
+    def upsert_products_by_urns(self, product_urns: List[str]) -> UpsertResult:
+        """
+        Upsert multiple products into vector storage by their URNs.
+        
+        Args:
+            product_urns: List of product URNs to upsert
+            
+        Returns:
+            UpsertResult with operation details
+        """
+        logger.info(f"Starting upsert_products_by_urns for {len(product_urns)} products")
+        start_time = time.time()
+        
+        result = UpsertResult(
+            total_products=0,
+            successful_records=0,
+            failed_records=0,
+            dense_index_success=True,
+            sparse_index_success=True,
+            errors=[],
+            processing_time=0.0,
+        )
+        
+        # Process in batches
+        batch_size = settings.PINECONE_BATCH_SIZE
+        for i in range(0, len(product_urns), batch_size):
+            batch_urns = product_urns[i:i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}: {len(batch_urns)} products")
+            
+            # Get products by URNs
+            products = []
+            for urn in batch_urns:
+                product = self.product_repository.get_by_urn(urn)
+                if product:
+                    # Get product in vector format
+                    product_data = self.product_repository.get_products_for_vector(
+                        offset=0,
+                        limit=1,
+                        org_id=product.organization_id,
+                        product_id=product.id
+                    )
+                    if product_data:
+                        products.extend(product_data)
+                    else:
+                        logger.warning(f"Could not fetch vector data for product {urn}")
+                        result.errors.append(f"Could not fetch vector data for product {urn}")
+                        result.failed_records += 1
+                else:
+                    logger.warning(f"Product not found with URN: {urn}")
+                    result.errors.append(f"Product not found with URN: {urn}")
+                    result.failed_records += 1
+            
+            if not products:
+                logger.warning(f"No valid products found in batch {i//batch_size + 1}")
+                continue
+            
+            result.total_products += len(products)
+            records = self._prepare_records(products)
+            
+            if not records:
+                result.failed_records += len(products)
+                continue
+            
+            # Try dense index
+            try:
+                logger.info(f"Upserting {len(records)} records into dense index")
+                self.vector_repository.upsert_products_into_dense_index(records, db=self.db_session)
+                logger.info(f"Dense index: successfully processed {len(records)} records")
+            except Exception as e:
+                logger.error(f"Dense index error in batch: {str(e)}")
+                result.dense_index_success = False
+                result.failed_records += len(records)
+                result.errors.append(f"Dense index error: {str(e)}")
+            
+            # Try sparse index
+            try:
+                logger.info(f"Upserting {len(records)} records into sparse index")
+                self.vector_repository.upsert_products_into_sparse_index(records)
+                logger.info(f"Sparse index: successfully processed {len(records)} records")
+            except Exception as e:
+                logger.error(f"Sparse index error in batch: {str(e)}")
+                result.sparse_index_success = False
+                result.failed_records += len(records)
+                result.errors.append(f"Sparse index error: {str(e)}")
+            
+            if result.dense_index_success and result.sparse_index_success:
+                result.successful_records += len(records)
+        
+        result.processing_time = time.time() - start_time
+        logger.info(
+            f"Finished upsert_products_by_urns. Total: {result.total_products}, Successful: {result.successful_records}, Failed: {result.failed_records}, Time: {result.processing_time:.2f}s"
+        )
+        return result

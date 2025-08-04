@@ -50,6 +50,11 @@ services:
           name: discovery-redis
           type: redis
           property: connectionString
+      - key: CACHE_REDIS_URL
+        fromService:
+          name: discovery-redis
+          type: redis
+          property: connectionString
       - key: FEED_CHECK_INTERVAL
         value: 300
       - key: EMBEDDING_UPDATE_INTERVAL
@@ -78,9 +83,13 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
+      - key: EMBEDDING_API_KEY
+        sync: false
 
 
-  # Celery worker for background tasks
+  # Celery worker for background tasks (including embeddings)
   - type: worker
     name: discovery-worker
     runtime: python
@@ -88,7 +97,7 @@ services:
     plan: starter
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.worker.celery_app worker --loglevel=info
+    startCommand: celery -A app.worker.celery_app worker --loglevel=info -Q celery,embeddings_high,embeddings_bulk
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -121,6 +130,11 @@ services:
           name: discovery-redis
           type: redis
           property: connectionString
+      - key: CACHE_REDIS_URL
+        fromService:
+          name: discovery-redis
+          type: redis
+          property: connectionString
       - key: FEED_CHECK_INTERVAL
         value: 300
       - key: EMBEDDING_UPDATE_INTERVAL
@@ -149,6 +163,10 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
+      - key: EMBEDDING_API_KEY
+        sync: false
 
 
   # Celery beat scheduler for periodic tasks
@@ -192,6 +210,11 @@ services:
           name: discovery-redis
           type: redis
           property: connectionString
+      - key: CACHE_REDIS_URL
+        fromService:
+          name: discovery-redis
+          type: redis
+          property: connectionString
       - key: FEED_CHECK_INTERVAL
         value: 300
       - key: EMBEDDING_UPDATE_INTERVAL
@@ -220,6 +243,10 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
+      - key: EMBEDDING_API_KEY
+        sync: false
 
   # MCP StreamableHTTP server
   - type: web
@@ -261,6 +288,11 @@ services:
           name: discovery-redis
           type: redis
           property: connectionString
+      - key: CACHE_REDIS_URL
+        fromService:
+          name: discovery-redis
+          type: redis
+          property: connectionString
       - key: FEED_CHECK_INTERVAL
         value: 300
       - key: EMBEDDING_UPDATE_INTERVAL
@@ -289,6 +321,10 @@ services:
         sync: false
       - key: PINECONE_NAMESPACE
         value: __default__
+      - key: VECTOR_PROVIDER
+        value: pinecone
+      - key: EMBEDDING_API_KEY
+        sync: false
 
 
   # Redis for MCP event store and Celery broker

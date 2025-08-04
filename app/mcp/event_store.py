@@ -34,9 +34,16 @@ class RedisEventStore:
     async def _get_redis(self) -> redis.Redis:
         """Get Redis client, create if needed"""
         if self.redis_client is None:
+            # Handle SSL connections
+            conn_params = {
+                "decode_responses": True
+            }
+            if settings.mcp_redis_url.startswith("rediss://"):
+                conn_params["ssl_cert_reqs"] = "none"
+            
             self.redis_client = redis.from_url(
-                settings.MCP_REDIS_URL,
-                decode_responses=True
+                settings.mcp_redis_url,
+                **conn_params
             )
         return self.redis_client
     

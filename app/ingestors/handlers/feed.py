@@ -3,6 +3,7 @@
 Handler for product feed data.
 """
 import logging
+import time
 from typing import Dict, Any, List, Optional
 from uuid import UUID
 
@@ -90,7 +91,6 @@ class FeedHandler:
             # Phase 1: Bulk process ProductGroups
             if product_groups:
                 logger.info(f"Processing {len(product_groups)} product groups in bulk")
-                import time
                 start_time = time.time()
                 
                 # Validate and prepare product groups for bulk processing
@@ -273,12 +273,30 @@ class FeedHandler:
 
         # 2. Product logic
         elif item_type == "Product":
+            # First check if Product has direct brand information
+            brand_info = item_data.get("brand")
+            if brand_info and isinstance(brand_info, dict):
+                brand_urn = brand_info.get("identifier", {}).get("value")
+                if brand_urn:
+                    # Look up brand by URN
+                    logger.debug(f"Product has direct brand URN: {brand_urn}")
+                    brand = self.brand_service.get_by_urn(brand_urn)
+                    if not brand:
+                        # Create brand if it doesn't exist
+                        logger.debug(f"Brand not found by URN, creating new brand with data: {brand_info}")
+                        brand = self.brand_service.get_or_create_by_urn(brand_info, self.org_urn)
+                        if not brand:
+                            logger.warning(f"Could not create brand for Product '{item_data.get('name', 'unknown')}' with URN {brand_urn}")
+                            return None
+                    return brand.id
+            
+            # Fall back to finding brand through ProductGroup
             # Find ProductGroup by isVariantOf['@id']
             product_group_urn = None
             if "isVariantOf" in item_data and "@id" in item_data["isVariantOf"]:
                 product_group_urn = item_data["isVariantOf"]["@id"]
             if not product_group_urn:
-                logger.warning(f"Product '{item_data.get('name', 'unknown')}' missing isVariantOf['@id'], skipping brand lookup.")
+                logger.warning(f"Product '{item_data.get('name', 'unknown')}' has no direct brand info and missing isVariantOf['@id'], skipping brand lookup.")
                 return None
             # Look up ProductGroup in DB
             product_group = self.product_group_service.get_by_urn(product_group_urn)

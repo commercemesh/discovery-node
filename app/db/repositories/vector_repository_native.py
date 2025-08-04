@@ -51,17 +51,18 @@ class VectorRepository:
         top_k: int = 20,
         alpha: float = 0.7,
         include_metadata: bool = True,
+        organization_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Search dense vector index."""
         if self.use_pinecone:
-            return self._search_pinecone_dense(query, top_k)
+            return self._search_pinecone_dense(query, top_k, organization_id)
         else:
             # For pgvector, we need the db session from SearchService
             # This is a limitation of the current design
             from app.db.base import SessionLocal
             db = SessionLocal()
             try:
-                return self._search_pgvector(query, top_k, db, None)
+                return self._search_pgvector(query, top_k, db, None, organization_id)
             finally:
                 db.close()
     
@@ -71,10 +72,11 @@ class VectorRepository:
         top_k: int = 20,
         alpha: float = 0.7,
         include_metadata: bool = True,
+        organization_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Search sparse vector index - only for Pinecone."""
         if self.use_pinecone:
-            return self._search_pinecone_sparse(query, top_k)
+            return self._search_pinecone_sparse(query, top_k, organization_id)
         else:
             # For pgvector, return empty results or use full-text search
             return {"results": []}
@@ -218,9 +220,13 @@ class VectorRepository:
         query: str,
         top_k: int,
         db: Session,
-        org_id: Optional[str] = None
+        org_id: Optional[str] = None,
+        organization_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Search products using pgvector."""
+        # Use organization_id parameter, fallback to org_id for backward compatibility
+        org_filter = organization_id or org_id
+        
         # This requires an embedding service to convert query to vector
         # For now, we'll need to implement this based on your embedding service
         
@@ -245,7 +251,7 @@ class VectorRepository:
             WHERE p.embedding IS NOT NULL
         """
         
-        if org_id:
+        if org_filter:
             base_query += " AND p.organization_id = :org_id"
         
         base_query += """
@@ -254,8 +260,8 @@ class VectorRepository:
         """
         
         params = {"query_vector": query_embedding, "limit": top_k}
-        if org_id:
-            params["org_id"] = org_id
+        if org_filter:
+            params["org_id"] = str(org_filter)
         
         results = db.execute(text(base_query), params).fetchall()
         
@@ -306,24 +312,42 @@ class VectorRepository:
                 )
             )
     
-    def _search_pinecone_dense(self, query: str, top_k: int) -> Dict[str, Any]:
-        """Original Pinecone search logic."""
+    def _search_pinecone_dense(self, query: str, top_k: int, organization_id: Optional[str] = None) -> Dict[str, Any]:
+        """Original Pinecone search logic with organization filtering."""
         try:
+            # Build filter for organization if provided
+            filter_dict = {}
+            if organization_id:
+                filter_dict["organization_id"] = str(organization_id)
+            
+            query_params = {"top_k": top_k, "inputs": {"text": query}}
+            if filter_dict:
+                query_params["filter"] = filter_dict
+                
             results = self.dense_index.search(
                 namespace=self.namespace, 
-                query={"top_k": top_k, "inputs": {"text": query}}
+                query=query_params
             )
             return results
         except Exception as e:
             logger.error(f"Pinecone dense search failed: {str(e)}")
             raise
     
-    def _search_pinecone_sparse(self, query: str, top_k: int) -> Dict[str, Any]:
-        """Original Pinecone sparse search logic."""
+    def _search_pinecone_sparse(self, query: str, top_k: int, organization_id: Optional[str] = None) -> Dict[str, Any]:
+        """Original Pinecone sparse search logic with organization filtering."""
         try:
+            # Build filter for organization if provided
+            filter_dict = {}
+            if organization_id:
+                filter_dict["organization_id"] = str(organization_id)
+            
+            query_params = {"top_k": top_k, "inputs": {"text": query}}
+            if filter_dict:
+                query_params["filter"] = filter_dict
+                
             results = self.sparse_index.search(
                 namespace=self.namespace,
-                query={"top_k": top_k, "inputs": {"text": query}}
+                query=query_params
             )
             return results
         except Exception as e:

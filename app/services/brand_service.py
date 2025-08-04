@@ -129,6 +129,16 @@ class BrandService:
         # Additional business logic/validation could go here
         brand = self.brand_repo.create(brand_data)
         return BrandInDB.model_validate(brand)
+    
+    def create(self, brand_data: BrandCreate, organization_id: UUID) -> BrandInDB:
+        """Create a new brand with organization ID"""
+        brand_data.organization_id = organization_id
+        return self.create_brand(brand_data)
+    
+    def get_by_organization_id(self, organization_id: UUID) -> Optional[BrandInDB]:
+        """Get the first brand for an organization"""
+        brands = self.list_by_organization(organization_id, skip=0, limit=1)
+        return brands[0] if brands else None
 
     def update_brand(
         self, brand_id: UUID, brand_data: BrandUpdate

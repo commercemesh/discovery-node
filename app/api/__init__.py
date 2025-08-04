@@ -1,4 +1,10 @@
-from .routes.search import search_router
-from .routes.products import products_router
+# Query/Discovery routers (read-only)
+from .routes.query import query_routers
 
-__all__ = ["search_router", "products_router"]
+# Admin routers (CRUD operations)
+from .routes.admin import admin_routers
+
+# Public routers
+from .routes.public import public_routers
+
+__all__ = ["query_routers", "admin_routers", "public_routers"]

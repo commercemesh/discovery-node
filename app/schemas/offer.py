@@ -9,7 +9,7 @@ class OfferBase(BaseModel):
     """Base Pydantic model for Offer data"""
 
     product_id: UUID = Field(..., description="Product this offer is for")
-    seller_id: UUID = Field(..., description="Organization offering the product")
+    organization_id: UUID = Field(..., description="Organization offering the product")
     price: float = Field(..., description="Current price of the product")
     price_currency: str = Field(..., description="Currency code (e.g., 'USD')")
     availability: str = Field(
@@ -66,7 +66,7 @@ class OfferUpdate(BaseModel):
     """Schema for updating an Offer (all fields optional)"""
 
     product_id: Optional[UUID] = None
-    seller_id: Optional[UUID] = None
+    organization_id: Optional[UUID] = None
     price: Optional[float] = None
     price_currency: Optional[str] = None
     availability: Optional[str] = None

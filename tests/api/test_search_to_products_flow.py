@@ -155,7 +155,7 @@ def setup_test_data(db_session):
     # Offer for hardcover
     offer1_data = OfferCreate(
         product_id=product1.id,
-        seller_id=organization.id,
+        organization_id=organization.id,
         price=29.99,
         price_currency="USD",
         availability="InStock",
@@ -166,7 +166,7 @@ def setup_test_data(db_session):
     # Offer for paperback
     offer2_data = OfferCreate(
         product_id=product2.id,
-        seller_id=organization.id,
+        organization_id=organization.id,
         price=19.99,
         price_currency="USD",
         availability="InStock",

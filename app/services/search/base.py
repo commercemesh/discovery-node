@@ -36,6 +36,8 @@ class BaseSearchService(ABC):
         top_k: int = 20,
         alpha: float = 0.7,
         include_metadata: bool = True,
+        filters: Optional[Dict[str, Any]] = None,
+        organization_id: Optional[str] = None,
     ) -> List[SearchResult]:
         """Search for products"""
         pass

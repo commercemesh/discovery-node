@@ -21,6 +21,12 @@ attrs==25.3.0
     #   referencing
 billiard==4.2.1
     # via celery
+boto3==1.40.2
+    # via discovery-node (pyproject.toml)
+botocore==1.40.2
+    # via
+    #   boto3
+    #   s3transfer
 celery==5.5.3
     # via discovery-node (pyproject.toml)
 certifi==2025.7.14
@@ -76,6 +82,10 @@ iniconfig==2.1.0
     # via pytest
 jiter==0.10.0
     # via openai
+jmespath==1.0.1
+    # via
+    #   boto3
+    #   botocore
 jsonschema==4.24.0
     # via mcp
 jsonschema-specifications==2025.4.1
@@ -139,6 +149,7 @@ pytest-cov==6.2.1
     # via discovery-node (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via
+    #   botocore
     #   celery
     #   pinecone
 python-dotenv==1.1.1
@@ -161,6 +172,8 @@ rpds-py==0.26.0
     # via
     #   jsonschema
     #   referencing
+s3transfer==0.13.1
+    # via boto3
 six==1.17.0
     # via python-dateutil
 sniffio==1.3.1
@@ -208,6 +221,7 @@ tzdata==2025.2
     # via kombu
 urllib3==2.5.0
     # via
+    #   botocore
     #   pinecone
     #   requests
 uvicorn==0.35.0

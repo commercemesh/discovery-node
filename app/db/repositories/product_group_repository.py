@@ -37,9 +37,12 @@ class ProductGroupRepository:
             .first()
         )
 
-    def list(self, skip: int = 0, limit: int = 100) -> List[ProductGroup]:
-        """List product groups with pagination"""
-        return self.db_session.query(ProductGroup).offset(skip).limit(limit).all()
+    def list(self, skip: int = 0, limit: int = 100, organization_id: Optional[UUID] = None) -> List[ProductGroup]:
+        """List product groups with pagination, optionally filtered by organization"""
+        query = self.db_session.query(ProductGroup)
+        if organization_id:
+            query = query.filter(ProductGroup.organization_id == organization_id)
+        return query.offset(skip).limit(limit).all()
 
     def list_by_brand(
         self, brand_id: UUID, skip: int = 0, limit: int = 100

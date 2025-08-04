@@ -1,0 +1,16 @@
+#!/bin/bash
+# Git safe push configuration for discovery-node
+
+# This file helps prevent accidental pushes to commercemesh/discovery-node
+# Your default remote is: origin (overwayai/discovery-node)
+
+# Safe push commands:
+#   git push origin main     ✓ Push to overwayai
+#   git push-safe main       ✓ Use alias to push to overwayai
+#   git push upstream main   ✗ Blocked by pre-push hook
+
+# To sync with commercemesh (pull only):
+#   git fetch upstream
+#   git merge upstream/main
+
+# REMEMBER: Always push to origin (overwayai), not upstream (commercemesh)

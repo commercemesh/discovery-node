@@ -1,0 +1,43 @@
+ingestion:
+  # Mode 1: Native CMP feeds (single brand)
+  # Uncomment to ingest from the CommerceMesh registry
+  # - name: "insight-editions"
+  #   source_type: "cmp"
+  #   registry: "https://github.com/commercemesh/commercemesh/blob/main/registry/brands.json"
+  #   filter:
+  #     organization: ["urn:cmp:org:11cdde9b-6a0c-5c18-8d01-11f701089cc2"]
+  #   schedule: "0 */4 * * *"
+
+  # Mode 2: Platform adapters (single brand from local files)
+  # Uncomment to ingest from local sample data
+  # - name: "acme-solutions"
+  #   source_type: "local"
+  #   registry: "samples/acme-solutions/brand-registry.json"
+  #   feed_path: "samples/acme-solutions/feed/feed.json"
+  #   schedule: "0 */4 * * *"
+
+  # - name: "insight-editions-local"
+  #   source_type: "local"
+  #   registry: "samples/Insight-editions.myshopify.com/brand-registry.json"
+  #   feed_path: "samples/Insight-editions.myshopify.com/feed/feed.json"
+  #   schedule: "0 */4 * * *"
+
+  # Mode 3: Multiple brands from registry
+  # Uncomment to ingest multiple brands at once
+  # - name: "multiple-brands"
+  #   source_type: "cmp"
+  #   registry: "https://github.com/commercemesh/commercemesh/blob/main/registry/brands.json"
+  #   filter:
+  #     organization: [
+  #       "urn:cmp:org:11cdde9b-6a0c-5c18-8d01-11f701089cc2",
+  #       "urn:cmp:org:22cdde9b-6a0c-5c18-8d01-22f701089cc3"
+  #     ]
+  #   schedule: "0 */6 * * *"
+
+# Schedule format (cron expression):
+# * * * * * (minute hour day month day_of_week)
+# Examples:
+# "0 */4 * * *" - Every 4 hours
+# "0 0 * * *"   - Daily at midnight
+# "0 9,17 * * *" - At 9 AM and 5 PM daily
+# "*/30 * * * *" - Every 30 minutes

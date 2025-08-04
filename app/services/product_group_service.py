@@ -74,6 +74,95 @@ class ProductGroupService:
         # Create the product group
         product_group = self.product_group_repo.create(product_group_data)
         return ProductGroupInDB.model_validate(product_group)
+    
+    def create_product_group_from_jsonld(self, jsonld_data: Dict[str, Any], organization_id: UUID) -> ProductGroupInDB:
+        """
+        Create a product group from JSON-LD data, handling brand and category creation
+        
+        This method handles:
+        - Brand creation/lookup (using provided URN or generating one)
+        - Category creation/lookup
+        - URN generation if not provided
+        """
+        from app.services.brand_service import BrandService
+        from app.services.organization_service import OrganizationService
+        from app.core.urn_generator import generate_brand_urn, generate_product_group_urn
+        
+        # Get organization for URN generation
+        from app.db.base import get_db_session
+        org_service = OrganizationService(self.db_session)
+        organization = org_service.get_organization(organization_id)
+        
+        # Handle brand
+        brand_id = None
+        brand_data = jsonld_data.get("brand")
+        if brand_data and isinstance(brand_data, dict):
+            brand_service = BrandService(self.db_session)
+            
+            # Extract brand URN from identifier if provided
+            brand_urn = None
+            if "identifier" in brand_data and isinstance(brand_data["identifier"], dict):
+                brand_urn = brand_data["identifier"].get("value")
+            
+            # Generate URN if not provided
+            if not brand_urn:
+                brand_urn = generate_brand_urn(brand_data.get("name", ""), organization.urn)
+            
+            # Check if brand exists
+            existing_brand = brand_service.get_by_urn(brand_urn)
+            if existing_brand:
+                brand_id = existing_brand.id
+            else:
+                # Create brand
+                from app.schemas.brand import BrandCreate
+                brand_create = BrandCreate(
+                    name=brand_data.get("name", ""),
+                    urn=brand_urn,
+                    organization_id=organization_id
+                )
+                new_brand = brand_service.create_brand(brand_create)
+                brand_id = new_brand.id
+        else:
+            # No brand provided - use organization as default brand
+            brand_service = BrandService(self.db_session)
+            default_brand_name = organization.name
+            brand_urn = generate_brand_urn(default_brand_name, organization.urn)
+            
+            existing_brand = brand_service.get_by_urn(brand_urn)
+            if existing_brand:
+                brand_id = existing_brand.id
+            else:
+                from app.schemas.brand import BrandCreate
+                brand_create = BrandCreate(
+                    name=default_brand_name,
+                    urn=brand_urn,
+                    organization_id=organization_id
+                )
+                new_brand = brand_service.create_brand(brand_create)
+                brand_id = new_brand.id
+        
+        # Handle category
+        category_name = jsonld_data.get("category", "uncategorized")
+        category = self.category_service.get_or_create_by_name(category_name)
+        
+        # Generate URN if not provided
+        pg_urn = jsonld_data.get("@id")
+        if not pg_urn:
+            product_group_id = jsonld_data.get("productGroupID", "")
+            pg_urn = generate_product_group_urn(product_group_id, organization.urn, brand_urn)
+            jsonld_data["@id"] = pg_urn
+        
+        # Parse JSON-LD to ProductGroupCreate schema
+        from app.utils import formatters
+        pg_create = formatters.parse_jsonld_to_product_group_create(
+            jsonld_data,
+            organization_id,
+            brand_id,
+            category.id
+        )
+        
+        # Create the product group
+        return self.create_product_group(pg_create)
 
     def update_product_group(
         self, product_group_id: UUID, product_group_data: ProductGroupUpdate
@@ -218,3 +307,4 @@ class ProductGroupService:
         # Bulk upsert
         upserted = self.product_group_repo.bulk_upsert(product_group_creates, batch_size)
         return [ProductGroupInDB.model_validate(pg) for pg in upserted]
+    

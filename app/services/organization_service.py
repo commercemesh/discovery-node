@@ -31,6 +31,13 @@ class OrganizationService:
         if not org:
             return None
         return OrganizationInDB.model_validate(org)
+    
+    def get_by_subdomain(self, subdomain: str) -> Optional[OrganizationInDB]:
+        """Get organization by subdomain"""
+        org = self.organization_repo.get_by_subdomain(subdomain)
+        if not org:
+            return None
+        return OrganizationInDB.model_validate(org)
 
     def list_organizations(
         self, skip: int = 0, limit: int = 100
@@ -38,6 +45,14 @@ class OrganizationService:
         """List organizations with pagination"""
         orgs = self.organization_repo.list(skip, limit)
         return [OrganizationInDB.model_validate(org) for org in orgs]
+    
+    def get_by_urn(self, urn: str) -> Optional[OrganizationInDB]:
+        """Get organization by URN (alias for get_organization_by_urn)"""
+        return self.get_organization_by_urn(urn)
+    
+    def create(self, org_data: OrganizationCreate) -> OrganizationInDB:
+        """Create a new organization (alias for create_organization)"""
+        return self.create_organization(org_data)
 
     def create_organization(self, org_data: OrganizationCreate) -> OrganizationInDB:
         """Create a new organization"""

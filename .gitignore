@@ -73,6 +73,7 @@ node_modules/
 # Local configuration
 config.local.py
 settings.local.py
+ingestion.yaml
 
 # Data files
 data/

@@ -42,3 +42,10 @@ from app.schemas.offer import (
     OfferInDB,
     OfferResponse,
 )
+from app.schemas.compare import (
+    CompareRequest,
+    CompareResponse,
+    ComparisonFormat,
+    ComparisonError,
+    Recommendations,
+)

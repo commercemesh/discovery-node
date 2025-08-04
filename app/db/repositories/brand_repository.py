@@ -29,9 +29,12 @@ class BrandRepository:
             .first()
         )
 
-    def list(self, skip: int = 0, limit: int = 100) -> List[Brand]:
-        """List brands with pagination"""
-        return self.db_session.query(Brand).offset(skip).limit(limit).all()
+    def list(self, skip: int = 0, limit: int = 100, organization_id: Optional[UUID] = None) -> List[Brand]:
+        """List brands with pagination, optionally filtered by organization"""
+        query = self.db_session.query(Brand)
+        if organization_id:
+            query = query.filter(Brand.organization_id == organization_id)
+        return query.offset(skip).limit(limit).all()
 
     def list_by_organization(
         self, organization_id: UUID, skip: int = 0, limit: int = 100

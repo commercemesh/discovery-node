@@ -17,6 +17,8 @@ class Organization(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False, index=True)
+    subdomain = Column(String, unique=True, index=True, nullable=True, comment="Unique subdomain for multi-tenant access")
+    domain = Column(String, nullable=True, comment="Custom domain configured by seller (e.g., agent.brand.com)")
     description = Column(Text)
     url = Column(String)
     logo_url = Column(String)
@@ -43,13 +45,16 @@ class Organization(Base):
         "Category", secondary=organization_category, backref="organizations"
     )
     offers = relationship(
-        "Offer", back_populates="seller", cascade="all, delete-orphan"
+        "Offer", back_populates="organization", cascade="all, delete-orphan"
     )
     product_groups = relationship(
         "ProductGroup", back_populates="organization", cascade="all, delete-orphan"
     )
     products = relationship(
         "Product", back_populates="organization", cascade="all, delete-orphan"
+    )
+    api_keys = relationship(
+        "APIKey", back_populates="organization", cascade="all, delete-orphan"
     )
 
     def __repr__(self):

@@ -216,11 +216,11 @@ def format_product_item(
                     "availability": f"https://schema.org/{offer['availability']}",
                 }
                 
-                # Add seller if available
-                if offer.get('seller_id'):
+                # Add organization if available
+                if offer.get('organization_id'):
                     offer_obj["seller"] = {
                         "@type": "Organization",
-                        "@id": f"urn:cmp:brand:{offer['seller_id']}",
+                        "@id": f"urn:cmp:brand:{offer['organization_id']}",
                     }
                 # Add optional fields
                 for key in ["inventory_level", "price_valid_until", "shipping_speed_tier"]:
@@ -392,6 +392,292 @@ def format_product_search_response(products: List[SearchResult]) -> Dict[str, An
     }
     
     return response_data
+
+
+def parse_jsonld_to_product_create(jsonld_data: Dict[str, Any], organization_id: Any, brand_id: Any, category_id: Any, product_group_id: Optional[Any] = None) -> "ProductCreate":
+    """
+    Parse JSON-LD product data into ProductCreate schema.
+    
+    Args:
+        jsonld_data: JSON-LD product data
+        organization_id: Organization UUID
+        brand_id: Brand UUID (must be resolved before calling)
+        category_id: Category UUID (must be resolved before calling)
+        product_group_id: Optional ProductGroup UUID (must be resolved before calling)
+        
+    Returns:
+        ProductCreate object ready for service
+    """
+    from app.schemas.product import ProductCreate, PropertyValueBase
+    import json
+    
+    # Create a deep copy to avoid modifying the original and serialize datetime objects
+    jsonld_copy = json.loads(json.dumps(jsonld_data, default=str))
+    
+    # Extract variant attributes from additionalProperty
+    variant_attrs = {}
+    additional_props = []
+    additional_property = jsonld_data.get("additionalProperty", [])
+    if additional_property:
+        for prop in additional_property:
+            if isinstance(prop, dict) and "name" in prop and "value" in prop:
+                variant_attrs[prop["name"]] = prop["value"]
+                additional_props.append(PropertyValueBase(
+                    name=prop["name"],
+                    value=prop["value"]
+                ))
+    
+    # Create ProductCreate object
+    return ProductCreate(
+        name=jsonld_data.get("name", ""),
+        sku=jsonld_data.get("sku", ""),
+        description=jsonld_data.get("description"),
+        url=jsonld_data.get("url"),
+        product_group_id=product_group_id,
+        brand_id=brand_id,
+        urn=jsonld_data.get("@id", ""),
+        variant_attributes=variant_attrs,
+        organization_id=organization_id,
+        category_id=category_id,
+        additional_properties=additional_props if additional_props else None,
+        raw_data=jsonld_copy  # Use the copy with serialized datetime
+    )
+
+
+def parse_jsonld_to_product_update(jsonld_data: Dict[str, Any]) -> "ProductUpdate":
+    """
+    Parse JSON-LD product data into ProductUpdate schema.
+    
+    Args:
+        jsonld_data: JSON-LD product data
+        
+    Returns:
+        ProductUpdate object ready for service
+    """
+    from app.schemas.product import ProductUpdate, PropertyValueBase
+    import json
+    from datetime import datetime
+    
+    # Create a deep copy to avoid modifying the original
+    jsonld_copy = json.loads(json.dumps(jsonld_data, default=str))
+    
+    # Extract variant attributes from additionalProperty
+    variant_attrs = {}
+    additional_props = []
+    additional_property = jsonld_data.get("additionalProperty", [])
+    if additional_property:
+        for prop in additional_property:
+            if isinstance(prop, dict) and "name" in prop and "value" in prop:
+                variant_attrs[prop["name"]] = prop["value"]
+                additional_props.append(PropertyValueBase(
+                    name=prop["name"],
+                    value=prop["value"]
+                ))
+    
+    # Create ProductUpdate object
+    return ProductUpdate(
+        name=jsonld_data.get("name"),
+        sku=jsonld_data.get("sku"),
+        description=jsonld_data.get("description"),
+        url=jsonld_data.get("url"),
+        variant_attributes=variant_attrs,
+        additional_properties=additional_props if additional_props else None,
+        raw_data=jsonld_copy  # Use the copy with serialized datetime
+    )
+
+
+def parse_jsonld_offer(offer_data: Dict[str, Any], product_id: Any, organization_id: Any) -> "OfferCreate":
+    """
+    Parse JSON-LD offer data into OfferCreate schema.
+    
+    Args:
+        offer_data: JSON-LD offer data
+        product_id: Product UUID
+        organization_id: Organization UUID
+        
+    Returns:
+        OfferCreate object ready for service
+    """
+    from app.schemas.offer import OfferCreate
+    import json
+    
+    # Create a deep copy to avoid modifying the original and serialize datetime objects
+    offer_data_copy = json.loads(json.dumps(offer_data, default=str))
+    
+    inventory = offer_data.get("inventoryLevel", {})
+    
+    return OfferCreate(
+        product_id=product_id,
+        organization_id=organization_id,
+        price=offer_data.get("price", 0.0),
+        price_currency=offer_data.get("priceCurrency", "USD"),
+        availability=offer_data.get("availability", "").replace("https://schema.org/", ""),
+        inventory_level=int(inventory.get("value", 0)) if inventory else None,
+        price_valid_until=offer_data.get("priceValidUntil"),
+        raw_data=offer_data_copy  # Use the copy with serialized datetime
+    )
+
+
+def parse_jsonld_to_product_group_create(jsonld_data: Dict[str, Any], organization_id: Any, brand_id: Any, category_id: Any) -> "ProductGroupCreate":
+    """
+    Parse JSON-LD product group data into ProductGroupCreate schema.
+    
+    Args:
+        jsonld_data: JSON-LD product group data
+        organization_id: Organization UUID
+        brand_id: Brand UUID (must be resolved before calling)
+        category_id: Category UUID (must be resolved before calling)
+        
+    Returns:
+        ProductGroupCreate object ready for service
+    """
+    from app.schemas.product_group import ProductGroupCreate
+    import json
+    
+    # Create a deep copy to avoid modifying the original and serialize datetime objects
+    jsonld_copy = json.loads(json.dumps(jsonld_data, default=str))
+    
+    # Extract varies_by and ensure it's a list
+    varies_by = jsonld_data.get("variesBy", [])
+    if isinstance(varies_by, str):
+        varies_by = [varies_by]
+    
+    return ProductGroupCreate(
+        name=jsonld_data.get("name", ""),
+        description=jsonld_data.get("description"),
+        brand_id=brand_id,
+        urn=jsonld_data.get("@id", ""),
+        product_group_id=jsonld_data.get("productGroupID", ""),
+        varies_by=varies_by,
+        organization_id=organization_id,
+        category_id=category_id,
+        raw_data=jsonld_copy  # Use the copy with serialized datetime
+    )
+
+
+def parse_jsonld_to_product_group_update(jsonld_data: Dict[str, Any]) -> "ProductGroupUpdate":
+    """
+    Parse JSON-LD product group data into ProductGroupUpdate schema.
+    
+    Args:
+        jsonld_data: JSON-LD product group data
+        
+    Returns:
+        ProductGroupUpdate object ready for service
+    """
+    from app.schemas.product_group import ProductGroupUpdate
+    import json
+    
+    # Create a deep copy to avoid modifying the original and serialize datetime objects
+    jsonld_copy = json.loads(json.dumps(jsonld_data, default=str))
+    
+    return ProductGroupUpdate(
+        name=jsonld_data.get("name"),
+        description=jsonld_data.get("description"),
+        raw_data=jsonld_copy  # Use the copy with serialized datetime
+    )
+
+
+def format_organization_registry_response(organization: Any) -> Dict[str, Any]:
+    """
+    Format organization data into CMP brand-registry format.
+    
+    Args:
+        organization: Organization object with attributes like urn, name, url, etc.
+        
+    Returns:
+        Dict representing a CMP brand-registry response
+    """
+    # Extract brand information if available
+    brand_data = None
+    if hasattr(organization, 'brands') and organization.brands:
+        # Assuming the first brand is the primary one
+        brand = organization.brands[0] if isinstance(organization.brands, list) else organization.brands
+        brand_data = {
+            "@type": "Brand",
+            "identifier": {
+                "@type": "PropertyValue",
+                "propertyID": "cmp:brandId",
+                "value": brand.urn
+            },
+            "name": brand.name,
+            "url": getattr(brand, 'url', organization.url),
+            "logo": brand.logo_url if hasattr(brand, 'logo_url') else None
+        }
+    
+    # Extract category from raw_data if available
+    category = None
+    if hasattr(organization, 'raw_data') and organization.raw_data:
+        category = organization.raw_data.get('category')
+    
+    # Build the organization response
+    response = {
+        "@context": {
+            "schema": "https://schema.org",
+            "cmp": "https://cmp.commercemesh.com/ns#"
+        },
+        "@type": "Organization",
+        "identifier": {
+            "@type": "PropertyValue",
+            "propertyID": "cmp:orgId",
+            "value": organization.urn
+        },
+        "name": organization.name,
+        "url": organization.url,
+        "logo": organization.logo_url if hasattr(organization, 'logo_url') else None,
+        "description": organization.description if hasattr(organization, 'description') else None,
+        "category": category
+    }
+    
+    # Add CMP services structure
+    # Determine base URL using domain or subdomain
+    base_url = None
+    if hasattr(organization, 'domain') and organization.domain:
+        # Use custom domain if configured
+        base_url = f"https://{organization.domain}"
+    elif hasattr(organization, 'subdomain') and organization.subdomain:
+        # Use subdomain with HOST from config
+        from app.core.config import settings
+        base_url = f"https://{organization.subdomain}.{settings.HOST}"
+    
+    if base_url:
+        response["cmp:services"] = {
+            "@type": "StructuredValue",
+            "name": "CommerceMesh Services",
+            "cmp:productFeed": {
+                "@type": "DataFeed",
+                "name": "Product Feed",
+                "url": f"{base_url}/feed/feed.json",
+                "encodingFormat": "application/json"
+            },
+            "cmp:queryAPI": {
+                "@type": "WebAPI",
+                "name": "Query API",
+                "url": f"{base_url}/api/v1/query",
+                "documentation": f"{base_url}/api/v1/query/docs"
+            },
+            "cmp:adminAPI": {
+                "@type": "WebAPI",
+                "name": "Admin API",
+                "url": f"{base_url}/api/v1/admin",
+                "documentation": f"{base_url}/api/v1/admin/docs"
+            },
+            "cmp:MCP": {
+                "@type": "SSE",
+                "name": "MCP (Sunset)",
+                "url": f"{base_url}/sse",
+                "encodingFormat": "text/event-stream"
+            }
+        }
+    
+    # Add brand if available
+    if brand_data:
+        response["brand"] = brand_data
+    
+    # Remove None values for cleaner response
+    response = {k: v for k, v in response.items() if v is not None}
+    
+    return response
 
 
 def format_product_by_urn_response(product_details: Dict[str, Any]) -> Dict[str, Any]:

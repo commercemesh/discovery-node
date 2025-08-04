@@ -11,7 +11,9 @@ from app.schemas.product import (
     ProductInDB,
     PropertyValueBase,
 )
+from app.schemas.offer import OfferCreate
 from app.db.models.brand import Brand
+from app.core.urn_generator import generate_brand_urn
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +41,21 @@ class ProductService:
             return None
         return ProductInDB.model_validate(product)
 
-    def get_product_with_details_by_urn(self, urn: str) -> Optional[Dict[str, Any]]:
+    def get_product_with_details_by_urn(self, urn: str, organization_id: Optional[UUID] = None) -> Optional[Dict[str, Any]]:
         """
         Search for URN in both products and product groups tables.
         If found as product: return ONLY the product
         If found as product group: return product group and all linked products
+        
+        In multi-tenant mode, verifies the product belongs to the organization.
         """
         # First try to find as a product
         product = self.product_repo.get_by_urn(urn)
         if product:
+            # In multi-tenant mode, verify the product belongs to the organization
+            if organization_id and product.organization_id != organization_id:
+                return None
+            
             # Found as product - return ONLY the product (no product group)
             # Get brand
             from app.services.brand_service import BrandService
@@ -75,6 +83,10 @@ class ProductService:
         # Then try to find as a product group
         product_group = self.product_group_service.get_by_urn(urn)
         if product_group:
+            # In multi-tenant mode, verify the product group belongs to the organization
+            if organization_id and product_group.organization_id != organization_id:
+                return None
+            
             # Found as product group - get all linked products
             from app.db.repositories.product_repository import ProductRepository
             product_repo = ProductRepository(self.db_session)
@@ -123,6 +135,17 @@ class ProductService:
         """List products with pagination"""
         products = self.product_repo.list(skip, limit)
         return [ProductInDB.model_validate(p) for p in products]
+    
+    def list_products_by_organization(
+        self, organization_id: UUID, skip: int = 0, limit: int = 100
+    ) -> List[ProductInDB]:
+        """List products by organization with pagination"""
+        products = self.product_repo.list_by_organization(organization_id, skip, limit)
+        return [ProductInDB.model_validate(p) for p in products]
+    
+    def count_products_by_organization(self, organization_id: UUID) -> int:
+        """Count total products for an organization"""
+        return self.product_repo.count_by_organization(organization_id)
 
     def list_by_product_group(
         self, product_group_id: UUID, skip: int = 0, limit: int = 100
@@ -151,6 +174,106 @@ class ProductService:
         # Create the product
         product = self.product_repo.create(product_data)
         return ProductInDB.model_validate(product)
+    
+    def create_product_from_jsonld(self, jsonld_data: Dict[str, Any], organization_id: UUID) -> ProductInDB:
+        """
+        Create a product from JSON-LD data, handling brand and category creation
+        
+        This method handles:
+        - Brand creation/lookup (using provided URN or generating one)
+        - Category creation/lookup
+        - Product group reference resolution
+        - URN generation if not provided
+        """
+        from app.services.brand_service import BrandService
+        from app.services.organization_service import OrganizationService
+        from app.core.urn_generator import generate_brand_urn, generate_sku_urn
+        
+        # Get organization for URN generation
+        org_service = OrganizationService(self.db_session)
+        organization = org_service.get_organization(organization_id)
+        
+        # Handle brand
+        brand_id = None
+        brand_data = jsonld_data.get("brand")
+        if brand_data and isinstance(brand_data, dict):
+            brand_service = BrandService(self.db_session)
+            
+            # Extract brand URN from identifier if provided
+            brand_urn = None
+            if "identifier" in brand_data and isinstance(brand_data["identifier"], dict):
+                brand_urn = brand_data["identifier"].get("value")
+            
+            # Generate URN if not provided
+            if not brand_urn:
+                brand_urn = generate_brand_urn(brand_data.get("name", ""), organization.urn)
+            
+            # Check if brand exists
+            existing_brand = brand_service.get_by_urn(brand_urn)
+            if existing_brand:
+                brand_id = existing_brand.id
+            else:
+                # Create brand
+                from app.schemas.brand import BrandCreate
+                brand_create = BrandCreate(
+                    name=brand_data.get("name", ""),
+                    urn=brand_urn,
+                    organization_id=organization_id
+                )
+                new_brand = brand_service.create_brand(brand_create)
+                brand_id = new_brand.id
+        else:
+            # No brand provided - use organization as default brand
+            brand_service = BrandService(self.db_session)
+            default_brand_name = organization.name
+            brand_urn = generate_brand_urn(default_brand_name, organization.urn)
+            
+            existing_brand = brand_service.get_by_urn(brand_urn)
+            if existing_brand:
+                brand_id = existing_brand.id
+            else:
+                from app.schemas.brand import BrandCreate
+                brand_create = BrandCreate(
+                    name=default_brand_name,
+                    urn=brand_urn,
+                    organization_id=organization_id
+                )
+                new_brand = brand_service.create_brand(brand_create)
+                brand_id = new_brand.id
+        
+        # Handle category
+        category_name = jsonld_data.get("category", "uncategorized")
+        category = self.category_service.get_or_create_by_name(category_name)
+        
+        # Handle product group reference
+        product_group_id = None
+        variant_of = jsonld_data.get("isVariantOf")
+        if variant_of and isinstance(variant_of, dict) and "@id" in variant_of:
+            pg = self.product_group_service.get_by_urn(variant_of["@id"])
+            if pg:
+                product_group_id = pg.id
+            else:
+                logger.warning(f"Product group {variant_of['@id']} not found")
+        
+        # Generate URN if not provided
+        product_urn = jsonld_data.get("@id")
+        if not product_urn:
+            sku = jsonld_data.get("sku", "")
+            product_urn = generate_sku_urn(sku, organization.urn, brand_urn)
+            jsonld_data["@id"] = product_urn
+        
+        # Parse JSON-LD to ProductCreate schema
+        from app.utils import formatters
+        product_create = formatters.parse_jsonld_to_product_create(
+            jsonld_data,
+            organization_id,
+            brand_id,
+            category.id,
+            product_group_id
+        )
+        
+        # Create the product
+        return self.create_product(product_create)
 
     def update_product(
         self, product_id: UUID, product_data: ProductUpdate
@@ -216,11 +339,7 @@ class ProductService:
                 )
 
 
-        if not product_group_id:
-            logger.error(f"Product {urn} missing required product group reference")
-            raise ValueError(f"Product {urn} missing required product group reference")
-
-        # Pull description from product group if not present in product
+        # Pull description from product group if not present in product and product group exists
         if not description and product_group and product_group.description:
             description = product_group.description
             logger.info(f"Using description from product group for product {urn}")
@@ -290,13 +409,13 @@ class ProductService:
                 logger.error(f"Brand with ID {brand_id} not found")
                 raise ValueError(f"Brand with ID {brand_id} not found")
 
-            seller_id = brand.organization_id
+            organization_id = brand.organization_id
 
             # Initialize offer service
             offer_service = OfferService(self.db_session)
 
             # Process the offer
-            offer_service.process_offer(product_data["offers"], product_id, seller_id)
+            offer_service.process_offer(product_data["offers"], product_id, organization_id)
 
         return product_id
 
@@ -345,6 +464,7 @@ class ProductService:
             
             # Process product group reference
             product_group_id = None
+            product_group = None
             if "isVariantOf" in product_data and "@id" in product_data["isVariantOf"]:
                 product_group_urn = product_data["isVariantOf"]["@id"]
                 product_group = self.product_group_service.get_by_urn(product_group_urn)
@@ -352,11 +472,6 @@ class ProductService:
                     product_group_id = product_group.id
                 else:
                     logger.warning(f"Product {urn} references non-existent product group {product_group_urn}")
-                    continue  # Skip products without valid product group
-            
-            if not product_group_id:
-                logger.warning(f"Product {urn} missing required product group reference")
-                continue
             
             # Get description from product or product group
             description = product_data.get("description", "")
@@ -413,3 +528,6 @@ class ProductService:
                     offer_service.process_offer(product_data["offers"], urn_to_product[urn].id, organization_id)
         
         return [ProductInDB.model_validate(p) for p in upserted]
+    
+    
+    

@@ -20,7 +20,7 @@ class Offer(Base):
         ForeignKey("products.id", ondelete="CASCADE"),
         nullable=False,
     )
-    seller_id = Column(
+    organization_id = Column(
         UUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
@@ -80,7 +80,7 @@ class Offer(Base):
 
     # Relationships
     product = relationship("Product", back_populates="offers")
-    seller = relationship("Organization", back_populates="offers")
+    organization = relationship("Organization", back_populates="offers")
 
     def __repr__(self):
-        return f"<Offer(id={self.id}, price={self.price} {self.price_currency}, seller_id={self.seller_id})>"
+        return f"<Offer(id={self.id}, price={self.price} {self.price_currency}, organization_id={self.organization_id})>"

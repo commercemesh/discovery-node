@@ -25,4 +25,5 @@ dependencies = [
     "starlette>=0.47.1",
     "pgvector>=0.3.6",
     "openai>=1.62.1",
+    "boto3>=1.34.0",
 ]

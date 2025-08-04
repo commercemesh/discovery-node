@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from app.db.models.organization import Organization
 from app.db.models.category import Category
 from app.schemas.organization import OrganizationCreate, OrganizationUpdate
+import re
+import unicodedata
 
 
 class OrganizationRepository:
@@ -12,6 +14,57 @@ class OrganizationRepository:
 
     def __init__(self, db_session: Session):
         self.db_session = db_session
+    
+    def _generate_web_friendly_subdomain(self, name: str, exclude_id: Optional[UUID] = None) -> str:
+        """
+        Generate a web-friendly subdomain from organization name.
+        
+        Args:
+            name: Organization name to convert
+            exclude_id: Organization ID to exclude when checking uniqueness (for updates)
+            
+        Returns:
+            Web-friendly subdomain that is unique and DNS-compliant
+        """
+        # First, normalize unicode characters
+        subdomain = unicodedata.normalize('NFKD', name)
+        subdomain = subdomain.encode('ascii', 'ignore').decode('ascii')
+        
+        # Convert to lowercase
+        subdomain = subdomain.lower()
+        
+        # Replace spaces and special characters with hyphens
+        subdomain = re.sub(r'[^a-z0-9]+', '-', subdomain)
+        
+        # Remove leading/trailing hyphens and collapse multiple hyphens
+        subdomain = re.sub(r'-+', '-', subdomain)
+        subdomain = subdomain.strip('-')
+        
+        # Ensure it starts with a letter or number (DNS requirement)
+        if subdomain and not re.match(r'^[a-z0-9]', subdomain):
+            subdomain = 'org-' + subdomain
+        
+        # Truncate to 63 characters (DNS label limit)
+        subdomain = subdomain[:63]
+        
+        # Ensure it doesn't end with a hyphen after truncation
+        subdomain = subdomain.rstrip('-')
+        
+        # If empty or invalid, use a default
+        if not subdomain or not re.match(r'^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$', subdomain):
+            subdomain = 'org'
+        
+        # Ensure uniqueness
+        counter = 0
+        base_subdomain = subdomain
+        while True:
+            existing = self.get_by_subdomain(subdomain)
+            if not existing or (exclude_id and existing.id == exclude_id):
+                break
+            counter += 1
+            subdomain = f"{base_subdomain}-{counter}"
+        
+        return subdomain
 
     def get_by_id(self, org_id: UUID) -> Optional[Organization]:
         """Get organization by ID"""
@@ -34,6 +87,14 @@ class OrganizationRepository:
             .filter(Organization.name == name)
             .first()
         )
+    
+    def get_by_subdomain(self, subdomain: str) -> Optional[Organization]:
+        """Get organization by subdomain"""
+        return (
+            self.db_session.query(Organization)
+            .filter(Organization.subdomain == subdomain)
+            .first()
+        )
 
     def list(self, skip: int = 0, limit: int = 100) -> List[Organization]:
         """List organizations with pagination"""
@@ -46,6 +107,10 @@ class OrganizationRepository:
 
         # Create dict without category_ids for SQLAlchemy model
         org_dict = org_data.model_dump(exclude={"category_ids"})
+
+        # Generate subdomain if not provided
+        if not org_dict.get("subdomain") and org_dict.get("name"):
+            org_dict["subdomain"] = self._generate_web_friendly_subdomain(org_dict["name"])
 
         # Create new Organization model instance
         db_org = Organization(**org_dict)
@@ -86,6 +151,13 @@ class OrganizationRepository:
         org_data_dict = org_data.model_dump(
             exclude={"category_ids"}, exclude_unset=True
         )
+        
+        # Generate subdomain if organization doesn't have one and name is being updated
+        if not db_org.subdomain and ("name" in org_data_dict or db_org.name):
+            # Use updated name if provided, otherwise use existing name
+            name = org_data_dict.get("name", db_org.name)
+            org_data_dict["subdomain"] = self._generate_web_friendly_subdomain(name, exclude_id=org_id)
+        
         for key, value in org_data_dict.items():
             setattr(db_org, key, value)
 

@@ -31,9 +31,12 @@ class ProductRepository:
             query = query.filter(Product.brand_id == brand_id)
         return query.first()
 
-    def list(self, skip: int = 0, limit: int = 100) -> List[Product]:
-        """List products with pagination"""
-        return self.db_session.query(Product).offset(skip).limit(limit).all()
+    def list(self, skip: int = 0, limit: int = 100, organization_id: Optional[UUID] = None) -> List[Product]:
+        """List products with pagination, optionally filtered by organization"""
+        query = self.db_session.query(Product)
+        if organization_id:
+            query = query.filter(Product.organization_id == organization_id)
+        return query.offset(skip).limit(limit).all()
 
     def list_by_product_group(
         self, product_group_id: UUID, skip: int = 0, limit: int = 100
@@ -70,23 +73,28 @@ class ProductRepository:
             .limit(limit)
             .all()
         )
-
-    def search(self, query: str, skip: int = 0, limit: int = 100) -> List[Product]:
-        """Search products by name or description"""
-        search_term = f"%{query}%"
+    
+    def count_by_organization(self, organization_id: UUID) -> int:
+        """Count total products for an organization"""
         return (
             self.db_session.query(Product)
-            .filter(
-                or_(
-                    Product.name.ilike(search_term),
-                    Product.description.ilike(search_term),
-                    Product.sku.ilike(search_term),
-                )
-            )
-            .offset(skip)
-            .limit(limit)
-            .all()
+            .filter(Product.organization_id == organization_id)
+            .count()
         )
+
+    def search(self, query: str, skip: int = 0, limit: int = 100, organization_id: Optional[UUID] = None) -> List[Product]:
+        """Search products by name or description, optionally filtered by organization"""
+        search_term = f"%{query}%"
+        db_query = self.db_session.query(Product).filter(
+            or_(
+                Product.name.ilike(search_term),
+                Product.description.ilike(search_term),
+                Product.sku.ilike(search_term),
+            )
+        )
+        if organization_id:
+            db_query = db_query.filter(Product.organization_id == organization_id)
+        return db_query.offset(skip).limit(limit).all()
 
     def create(self, product_data: ProductCreate) -> Product:
         """Create a new product"""
@@ -248,10 +256,26 @@ class ProductRepository:
         )
 
     def get_products_for_vector(
-        self, offset: int, limit: int, org_id: UUID
+        self, offset: int, limit: int, org_id: UUID, product_id: Optional[UUID] = None
     ) -> List[ProductForVector]:
         """Get products formatted specifically for vector processing"""
-        products = self.get_products_with_relations_for_org(offset, limit, org_id)
+        if product_id:
+            # Get a specific product by ID
+            products = (
+                self.db_session.query(Product)
+                .options(
+                    selectinload(Product.brand),
+                    selectinload(Product.product_group),
+                    selectinload(Product.category),
+                    selectinload(Product.offers),
+                )
+                .filter(Product.id == product_id, Product.organization_id == org_id)
+                .all()
+            )
+        else:
+            # Get products by organization with pagination
+            products = self.get_products_with_relations_for_org(offset, limit, org_id)
+        
         return [
             ProductForVector.from_product_with_relations(product)
             for product in products

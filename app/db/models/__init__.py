@@ -6,5 +6,7 @@ from app.db.models.product_group import ProductGroup
 from app.db.models.product import Product
 from app.db.models.offer import Offer
 from app.db.models.associations import organization_category
+from app.db.models.api_key import APIKey, APIKeyAuditLog
+from app.db.models.api_usage_metric import APIUsageMetric
 
 # Import other models as they are created

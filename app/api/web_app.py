@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import uuid
 
 # Third party
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,8 @@ from sqlalchemy import text
 # Local imports
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.auth import api_key_auth_admin
+from app.middleware import MetricsMiddleware
 import app.api as api
 
 
@@ -61,12 +63,33 @@ def create_app() -> FastAPI:
 
     # app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-    # Mount API routes - automatically mount all routers from api/__init__.py
-    for router_name in api.__all__:
-        router = getattr(api, router_name)
-        # Extract tag from router name (e.g., "organization_router" -> "organizations")
-        tag = router_name.replace("_router", "").replace("_", "")
-        app.include_router(router, prefix="/api", tags=[tag])
+    # Mount Query APIs (semantic search, read-only)
+    for name, router in api.query_routers:
+        if name == "feed":
+            # Feed router needs to be at root level
+            app.include_router(router, prefix="", tags=["feed"])
+        elif name == "cache":
+            # Cache router stays at /api/v1/cache
+            app.include_router(router, prefix="/api/v1", tags=["cache"])
+        else:
+            app.include_router(
+                router, 
+                prefix="/api/v1/query",
+                tags=[f"query-{name}"]
+            )
+
+    # Mount Admin APIs (CRUD operations) with authentication
+    for name, router in api.admin_routers:
+        app.include_router(
+            router,
+            prefix="/api/v1/admin", 
+            tags=[f"admin-{name}"],
+            dependencies=[Depends(api_key_auth_admin)]
+        )
+
+    # Mount Public APIs
+    for name, router in api.public_routers:
+        app.include_router(router, prefix="/api/v1", tags=[name])
 
     # Add CORS middleware
     app.add_middleware(
@@ -76,6 +99,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Add metrics middleware to track API usage
+    app.add_middleware(MetricsMiddleware)
 
     # Add detailed request/response logging middleware
     @app.middleware("http")
@@ -174,6 +200,7 @@ def create_app() -> FastAPI:
             )
             logger.info(f"[{request_id}] REQUEST END (ERROR)")
             logger.info(f"[{request_id}] {'='*60}")
+            raise  # Re-raise the exception so it's handled properly
 
     # Add request timing middleware
     @app.middleware("http")
@@ -193,10 +220,24 @@ def create_app() -> FastAPI:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    # OpenAPI specification endpoints
+    # Helper function to filter routes by path prefix
+    def filter_routes_by_prefix(routes, prefixes):
+        """Filter routes that match any of the given prefixes"""
+        filtered = []
+        for route in routes:
+            if hasattr(route, 'path'):
+                # Check if route path starts with any of the prefixes
+                if any(route.path.startswith(prefix) for prefix in prefixes):
+                    filtered.append(route)
+                # Also include root health check
+                elif route.path in ["/health", "/openapi.yaml", "/openapi.json"]:
+                    filtered.append(route)
+        return filtered
+
+    # OpenAPI specification endpoints - Full API
     @app.get("/openapi.yaml")
     async def get_openapi_yaml():
-        """Serve OpenAPI specification in YAML format"""
+        """Serve full OpenAPI specification in YAML format"""
         from fastapi.openapi.utils import get_openapi
         from yaml import dump
 
@@ -216,7 +257,7 @@ def create_app() -> FastAPI:
 
     @app.get("/openapi.json")
     async def get_openapi_json():
-        """Serve OpenAPI specification in JSON format"""
+        """Serve full OpenAPI specification in JSON format"""
         from fastapi.openapi.utils import get_openapi
         import json
 
@@ -234,6 +275,162 @@ def create_app() -> FastAPI:
 
         return Response(content=json_content, media_type="application/json")
 
+    # Query API OpenAPI specification
+    @app.get("/api/v1/query/openapi.yaml")
+    async def get_query_openapi_yaml():
+        """Serve Query API OpenAPI specification in YAML format"""
+        from fastapi.openapi.utils import get_openapi
+        from yaml import dump
+
+        # Filter routes for query APIs
+        query_prefixes = ["/api/v1/query/", "/api/v1/cache", "/api/v1/health", "/feed"]
+        filtered_routes = filter_routes_by_prefix(app.routes, query_prefixes)
+
+        openapi_schema = get_openapi(
+            title=f"{app.title} - Query API",
+            version=app.version,
+            description="Query and search endpoints for product discovery",
+            routes=filtered_routes,
+        )
+
+        # Convert to YAML
+        yaml_content = dump(openapi_schema, default_flow_style=False, sort_keys=False)
+
+        from fastapi.responses import Response
+
+        return Response(content=yaml_content, media_type="application/x-yaml")
+
+    # Admin API OpenAPI specification
+    @app.get("/api/v1/admin/openapi.yaml")
+    async def get_admin_openapi_yaml():
+        """Serve Admin API OpenAPI specification in YAML format"""
+        from fastapi.openapi.utils import get_openapi
+        from yaml import dump
+
+        # Filter routes for admin APIs
+        admin_prefixes = ["/api/v1/admin/", "/api/v1/health"]
+        filtered_routes = filter_routes_by_prefix(app.routes, admin_prefixes)
+
+        openapi_schema = get_openapi(
+            title=f"{app.title} - Admin API",
+            version=app.version,
+            description="Administrative endpoints for managing organizations, brands, and products",
+            routes=filtered_routes,
+        )
+
+        # Convert to YAML
+        yaml_content = dump(openapi_schema, default_flow_style=False, sort_keys=False)
+
+        from fastapi.responses import Response
+
+        return Response(content=yaml_content, media_type="application/x-yaml")
+
+    # Root route to serve brand-registry.json based on subdomain
+    @app.get("/")
+    async def get_brand_registry(request: Request):
+        """Serve brand-registry.json based on subdomain"""
+        from app.db.base import get_db_session
+        from app.services.organization_service import OrganizationService
+        from app.services.brand_service import BrandService
+        
+        # Extract subdomain from host header
+        host = request.headers.get("host", "")
+        subdomain = None
+        
+        # Parse subdomain from host (e.g., "brand.discovery.com" -> "brand")
+        if host:
+            # Remove port if present
+            host_without_port = host.split(":")[0]
+            parts = host_without_port.split(".")
+            
+            # For localhost development (e.g., "insight-editions.localhost")
+            if len(parts) >= 2 and parts[-1] == "localhost":
+                subdomain = parts[0]
+            # For production domains (e.g., "brand.discovery.com")
+            elif len(parts) > 2:  # At least subdomain.domain.tld
+                subdomain = parts[0]
+        
+        if not subdomain:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "No subdomain found in request"}
+            )
+        
+        # Get organization by subdomain
+        db_gen = get_db_session()
+        db = next(db_gen)
+        try:
+            org_service = OrganizationService(db)
+            organization = org_service.get_by_subdomain(subdomain)
+            
+            if not organization:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": f"Organization not found for subdomain: {subdomain}"}
+                )
+            
+            # Get brand for the organization
+            brand_service = BrandService(db)
+            brand = brand_service.get_by_organization_id(organization.id)
+            
+            # Build brand-registry.json response
+            brand_registry = {
+                "@context": {
+                    "schema": "https://schema.org",
+                    "cmp": "https://schema.commercemesh.ai/ns#"
+                },
+                "@type": "Organization",
+                "name": organization.name,
+                "description": organization.description,
+                "url": organization.url,
+                "logo": organization.logo_url,
+                "brand": {
+                    "@type": "Brand",
+                    "name": brand.name if brand else organization.name,
+                    "logo": brand.logo_url if brand and brand.logo_url else organization.logo_url,
+                    "identifier": {
+                        "@type": "PropertyValue",
+                        "propertyID": "cmp:brandId",
+                        "value": brand.urn if brand else organization.urn
+                    }
+                } if brand else None,
+                "sameAs": organization.social_links if organization.social_links else [],
+                "cmp:category": [cat.slug for cat in organization.categories] if organization.categories else [],
+                "cmp:links": [
+                    {
+                        "@type": "catalogue",
+                        "url": f"https://{host}/feed/feed.json"
+                    },
+                    {
+                        "@type": "api",
+                        "url": f"https://{host}/api/v1/query/openapi.yaml"
+                    },
+                    {
+                        "@type": "mcp",
+                        "url": f"https://{host}/sse"
+                    }
+                ],
+                "identifier": {
+                    "@type": "PropertyValue",
+                    "propertyID": "cmp:orgId",
+                    "value": organization.urn
+                }
+            }
+            
+            return JSONResponse(content=brand_registry)
+            
+        finally:
+            db.close()
+
+    # ValueError handler (before global handler)
+    @app.exception_handler(ValueError)
+    async def value_error_handler(request: Request, exc: ValueError):
+        logger.error(f"ValueError: {str(exc)}")
+        return JSONResponse(
+            status_code=400,
+            content={"detail": str(exc)}
+        )
+    
     # Global exception handler
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
@@ -250,21 +447,96 @@ def create_app() -> FastAPI:
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ):
-        logger.error(f"Validation error: {exc.errors()}")
-        logger.error(f"Request body: {exc.body}")
+        # Clean up the errors to remove non-serializable objects
+        errors = []
+        
+        # Try to extract identifying information from the request body
+        identifying_info = {}
+        try:
+            if exc.body and isinstance(exc.body, dict):
+                # Extract top-level identifiers
+                if "@id" in exc.body:
+                    identifying_info["@id"] = exc.body["@id"]
+                if "sku" in exc.body:
+                    identifying_info["sku"] = exc.body["sku"]
+                    
+                # For ItemList requests, try to extract identifiers from items
+                if exc.body.get("@type") == "ItemList" and "itemListElement" in exc.body:
+                    items_info = []
+                    for idx, item in enumerate(exc.body["itemListElement"]):
+                        if isinstance(item, dict) and "item" in item:
+                            item_data = item["item"]
+                            if isinstance(item_data, dict):
+                                item_info = {"position": item.get("position", idx + 1)}
+                                if "@id" in item_data:
+                                    item_info["@id"] = item_data["@id"]
+                                if "sku" in item_data:
+                                    item_info["sku"] = item_data["sku"]
+                                if "name" in item_data:
+                                    item_info["name"] = item_data["name"]
+                                if "@type" in item_data:
+                                    item_info["@type"] = item_data["@type"]
+                                items_info.append(item_info)
+                    if items_info:
+                        identifying_info["items"] = items_info
+        except Exception as e:
+            logger.warning(f"Could not extract identifying info from request: {e}")
+        
+        for error in exc.errors():
+            clean_error = {
+                "type": error.get("type"),
+                "loc": error.get("loc"),
+                "msg": error.get("msg")
+            }
+            # Remove the ctx field which contains non-serializable ValueError objects
+            if 'ctx' in error:
+                if 'error' in error['ctx']:
+                    # Convert the error to string
+                    clean_error['ctx'] = {"error": str(error['ctx']['error'])}
+            errors.append(clean_error)
+        
+        logger.error(f"Validation error: {errors}")
+        logger.error(f"Request body identifiers: {identifying_info}")
+        
+        response_content = {
+            "detail": "Validation error", 
+            "errors": errors
+        }
+        
+        if identifying_info:
+            response_content["request_identifiers"] = identifying_info
+            
         return JSONResponse(
             status_code=422,
-            content={"detail": "Validation error", "errors": exc.errors()},
+            content=response_content,
         )
 
     @app.exception_handler(ValidationError)
     async def pydantic_validation_exception_handler(
         request: Request, exc: ValidationError
     ):
-        logger.error(f"Pydantic validation error: {exc.errors()}")
+        # Clean up the errors to remove non-serializable objects
+        errors = []
+        for error in exc.errors():
+            if isinstance(error, dict):
+                clean_error = {
+                    "type": error.get("type"),
+                    "loc": error.get("loc"),
+                    "msg": error.get("msg")
+                }
+                # Remove the ctx field which contains non-serializable ValueError objects
+                if 'ctx' in error and isinstance(error['ctx'], dict):
+                    if 'error' in error['ctx']:
+                        # Convert the error to string
+                        clean_error['ctx'] = {"error": str(error['ctx']['error'])}
+            else:
+                clean_error = {'msg': str(error)}
+            errors.append(clean_error)
+        
+        logger.error(f"Pydantic validation error: {errors}")
         return JSONResponse(
             status_code=422,
-            content={"detail": "Validation error", "errors": exc.errors()},
+            content={"detail": "Validation error", "errors": errors},
         )
 
     return app

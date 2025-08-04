@@ -33,11 +33,11 @@ class OfferService:
         offers = self.offer_repo.list_by_product(product_id, skip, limit)
         return [OfferInDB.model_validate(o) for o in offers]
 
-    def list_by_seller(
-        self, seller_id: UUID, skip: int = 0, limit: int = 100
+    def list_by_organization(
+        self, organization_id: UUID, skip: int = 0, limit: int = 100
     ) -> List[OfferInDB]:
-        """List offers from a specific seller"""
-        offers = self.offer_repo.list_by_seller(seller_id, skip, limit)
+        """List offers from a specific organization"""
+        offers = self.offer_repo.list_by_organization(organization_id, skip, limit)
         return [OfferInDB.model_validate(o) for o in offers]
 
     def get_best_price(self, product_id: UUID) -> Optional[OfferInDB]:
@@ -67,18 +67,18 @@ class OfferService:
         return self.offer_repo.delete(offer_id)
 
     def process_offer(
-        self, offer_data: Dict[str, Any], product_id: UUID, seller_id: UUID
+        self, offer_data: Dict[str, Any], product_id: UUID, organization_id: UUID
     ) -> UUID:
         """
         Process offer data from the CMP product feed.
         Creates or updates the offer in the database.
         Returns the offer ID.
         """
-        # Check if an offer already exists for this product and seller
+        # Check if an offer already exists for this product and organization
         existing_offers = self.offer_repo.list_by_product(product_id)
         existing_offer = None
         for offer in existing_offers:
-            if offer.seller_id == seller_id:
+            if offer.organization_id == organization_id:
                 existing_offer = offer
                 break
         
@@ -135,7 +135,7 @@ class OfferService:
 
         # If offer exists, update it; otherwise create new one
         if existing_offer:
-            logger.info(f"Updating existing offer {existing_offer.id} for product {product_id} and seller {seller_id}")
+            logger.info(f"Updating existing offer {existing_offer.id} for product {product_id} and organization {organization_id}")
             # Update existing offer
             offer_update_data = OfferUpdate(
                 price=price,
@@ -159,11 +159,11 @@ class OfferService:
             updated_offer = self.offer_repo.update(existing_offer.id, offer_update_data)
             return updated_offer.id
         else:
-            logger.info(f"Creating new offer for product {product_id} and seller {seller_id}")
+            logger.info(f"Creating new offer for product {product_id} and organization {organization_id}")
             # Create new offer
             offer_create_data = OfferCreate(
                 product_id=product_id,
-                seller_id=seller_id,
+                organization_id=organization_id,
                 price=price,
                 price_currency=price_currency,
                 availability=availability,

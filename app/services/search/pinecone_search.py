@@ -19,24 +19,34 @@ class PineconeSearchService(BaseSearchService):
     def search_products(
         self,
         query: str,
-        top_k: int = 20,
+        top_k: int = 10,
         alpha: float = 0.7,
         include_metadata: bool = True,
+        filters: Optional[Dict[str, Any]] = None,
+        organization_id: Optional[str] = None,
     ):
         """Search for products using Pinecone's dense and sparse indices"""
-
         try:
+            # Build Pinecone filter
+            pinecone_filter = {}
+            if filters:
+                if filters.get("category"):
+                    pinecone_filter["category"] = filters["category"]
+                if filters.get("price_max") is not None:
+                    pinecone_filter["price"] = {"$lte": filters["price_max"]}
+            # Note: organization_id filtering will be implemented later
+            
             # Reduced fetch multiplier since inference is faster
             fetch_k = min(top_k * 2, 50)
             logger.info(
-                f"🔍 Querying Pinecone indices with Inference API (fetch_k={fetch_k})..."
+                f"🔍 Querying Pinecone indices with Inference API (fetch_k={fetch_k}, filter={pinecone_filter})..."
             )
             start_time = time.time()
             dense_results = self.vector_repository._search_dense_index(
-                query, fetch_k, alpha, include_metadata
+                query, fetch_k, alpha, include_metadata, pinecone_filter
             )
             sparse_results = self.vector_repository._search_sparse_index(
-                query, fetch_k, alpha, include_metadata
+                query, fetch_k, alpha, include_metadata, pinecone_filter
             )
 
             logger.info(f"🔍 DEBUG: Dense results type: {type(dense_results)}")
@@ -47,7 +57,7 @@ class PineconeSearchService(BaseSearchService):
             
             logger.info(f"🔍 DEBUG: Dense hits count: {len(dense_hits)}")
             logger.info(f"🔍 DEBUG: Sparse hits count: {len(sparse_hits)}")
-            merged_results = self.rrf_merge(dense_hits, sparse_hits, k=60, top_k=20)
+            merged_results = self.rrf_merge(dense_hits, sparse_hits, k=60, top_k=top_k)
 
             # #Optional database enrichment
             if merged_results:
